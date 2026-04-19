@@ -21,8 +21,8 @@ services:
 
   hub-server:
     build:
-      context: ./apps/hub-server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./apps/hub-server/Dockerfile
     image: overwatch/hub-server:local
     container_name: overwatch_hub_server
     restart: unless-stopped
@@ -38,8 +38,8 @@ services:
 
   hub-client:
     build:
-      context: ./apps/hub-client
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./apps/hub-client/Dockerfile
     image: overwatch/hub-client:local
     container_name: overwatch_hub_client
     restart: unless-stopped
@@ -48,8 +48,8 @@ services:
 
   lab-agent:
     build:
-      context: ./apps/lab-agent
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./apps/lab-agent/Dockerfile
     image: overwatch/lab-agent:local
     container_name: overwatch_lab_agent
     restart: unless-stopped
