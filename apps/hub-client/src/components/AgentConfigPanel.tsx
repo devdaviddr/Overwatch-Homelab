@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Copy, Check, Settings2, Wifi, WifiOff, TerminalSquare } from "lucide-react";
+import { Copy, Check, Settings2, Wifi, WifiOff, TerminalSquare, AlertTriangle } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.tsx";
 import { useUpdateHomeLab } from "../hooks/useHomeLabMutations.ts";
 
@@ -47,6 +47,7 @@ export function AgentConfigPanel({ lab, connected }: Props) {
   const [metricsInput, setMetricsInput] = useState(String(lab.metricsIntervalMs));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [snippetTab, setSnippetTab] = useState<"native" | "docker">("native");
 
   async function save() {
     setSaving(true);
@@ -73,7 +74,13 @@ export function AgentConfigPanel({ lab, connected }: Props) {
     `METRICS_INTERVAL_MS=${lab.metricsIntervalMs}`,
   ].join("\n");
 
-  const dockerBlock = `docker run -d \\
+  const nativeBlock = `# Save as .env in the lab-agent directory, then:
+npm install && npm run build && npm start`;
+
+  const dockerBlock = `# Linux hosts only — Docker on macOS reports VM specs, not real hardware
+docker run -d --pid=host --privileged \\
+  -v /proc:/host/proc:ro \\
+  -v /sys:/host/sys:ro \\
   -e LAB_ID=${lab.id} \\
   -e HUB_URL=${hubUrl} \\
   -e HEARTBEAT_INTERVAL_MS=${lab.heartbeatIntervalMs} \\
@@ -192,16 +199,57 @@ export function AgentConfigPanel({ lab, connected }: Props) {
             </pre>
           </div>
 
-          {/* docker run snippet */}
+          {/* Run snippet tabs */}
           <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <TerminalSquare className="h-3.5 w-3.5 text-gray-500" />
-              <span className="text-xs text-gray-500 uppercase tracking-wider">docker run</span>
-              <CopyButton value={dockerBlock} />
+            <div className="flex items-center gap-0 mb-0 border border-gray-800 rounded-t-lg overflow-hidden">
+              <button
+                onClick={() => setSnippetTab("native")}
+                className={`flex-1 text-xs px-3 py-1.5 transition-colors ${
+                  snippetTab === "native"
+                    ? "bg-gray-800 text-white"
+                    : "text-gray-500 hover:text-gray-300 bg-gray-900"
+                }`}
+              >
+                Native (macOS / Linux)
+              </button>
+              <button
+                onClick={() => setSnippetTab("docker")}
+                className={`flex-1 text-xs px-3 py-1.5 transition-colors border-l border-gray-800 ${
+                  snippetTab === "docker"
+                    ? "bg-gray-800 text-white"
+                    : "text-gray-500 hover:text-gray-300 bg-gray-900"
+                }`}
+              >
+                Docker (Linux only)
+              </button>
             </div>
-            <pre className="bg-gray-950 border border-gray-800 rounded-lg p-3 text-xs text-green-300 font-mono overflow-x-auto whitespace-pre">
-              {dockerBlock}
-            </pre>
+
+            {snippetTab === "native" ? (
+              <div>
+                <div className="flex items-center justify-between bg-gray-950 border border-t-0 border-gray-800 rounded-b-lg px-3 py-1.5">
+                  <span className="text-xs text-gray-500">Run agent natively — reports real host hardware</span>
+                  <CopyButton value={`${envBlock}\n\n${nativeBlock}`} />
+                </div>
+                <pre className="bg-gray-950 border border-t-0 border-gray-800 rounded-b-lg px-3 pb-3 text-xs text-green-300 font-mono overflow-x-auto whitespace-pre">
+                  {`# 1. Copy .env above into apps/lab-agent/.env\n# 2. From the repo root:\n${nativeBlock}`}
+                </pre>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center gap-1.5 bg-amber-950/30 border border-t-0 border-amber-900/50 px-3 py-1.5">
+                  <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
+                  <span className="text-xs text-amber-400">
+                    Docker on macOS runs in a Linux VM — metrics will reflect VM specs, not real host hardware. Use native mode on macOS.
+                  </span>
+                </div>
+                <div className="flex justify-end bg-gray-950 border border-t-0 border-gray-800 px-3 py-1">
+                  <CopyButton value={dockerBlock} />
+                </div>
+                <pre className="bg-gray-950 border border-t-0 border-gray-800 rounded-b-lg px-3 pb-3 text-xs text-green-300 font-mono overflow-x-auto whitespace-pre">
+                  {dockerBlock}
+                </pre>
+              </div>
+            )}
           </div>
         </div>
       )}
