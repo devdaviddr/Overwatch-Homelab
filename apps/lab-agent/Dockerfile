@@ -9,6 +9,9 @@ COPY apps/lab-agent/package.json ./apps/lab-agent/package.json
 RUN npm install --workspaces --no-audit --no-fund
 
 COPY . .
+# Build all workspaces (ensures packages/shared-types is compiled)
+RUN npm run build --if-present
+
 WORKDIR /usr/src/app/apps/lab-agent
 RUN npm run build
 

@@ -12,7 +12,12 @@ RUN npm install --workspaces --no-audit --no-fund
 
 # Copy full repo and build the server
 COPY . .
+# Build all workspaces (ensures packages/shared-types is compiled)
+RUN npm run build --if-present
+
 WORKDIR /usr/src/app/apps/hub-server
+# Install openssl for Prisma and run prisma generate if present
+RUN apt-get update && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/* || true
 RUN npm run db:generate || true
 RUN npm run build
 
