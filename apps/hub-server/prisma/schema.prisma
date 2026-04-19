@@ -1,0 +1,52 @@
+// Prisma Schema for Overwatch Homelab
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  homelabs HomeLab[]
+
+  @@map("users")
+}
+
+model HomeLab {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  ownerId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner        User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  storagePools StoragePool[]
+
+  @@map("homelabs")
+}
+
+model StoragePool {
+  id         String   @id @default(uuid())
+  name       String
+  totalBytes BigInt   @default(0)
+  usedBytes  BigInt   @default(0)
+  homeLabId  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  homeLab HomeLab @relation(fields: [homeLabId], references: [id], onDelete: Cascade)
+
+  @@map("storage_pools")
+}
