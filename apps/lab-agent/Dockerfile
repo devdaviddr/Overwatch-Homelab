@@ -3,8 +3,8 @@ FROM node:20-slim AS builder
 WORKDIR /usr/src/app
 
 COPY package.json package-lock.json tsconfig.base.json ./
+COPY apps ./apps
 COPY packages ./packages
-COPY apps/lab-agent/package.json ./apps/lab-agent/package.json
 
 RUN npm install --workspaces --no-audit --no-fund
 

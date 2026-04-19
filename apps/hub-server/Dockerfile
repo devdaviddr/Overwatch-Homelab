@@ -4,8 +4,8 @@ WORKDIR /usr/src/app
 
 # Copy root workspace manifests so local packages can be installed
 COPY package.json package-lock.json tsconfig.base.json ./
+COPY apps ./apps
 COPY packages ./packages
-COPY apps/hub-server/package.json ./apps/hub-server/package.json
 
 # Install workspaces (includes local @overwatch/shared-types)
 RUN npm install --workspaces --no-audit --no-fund
