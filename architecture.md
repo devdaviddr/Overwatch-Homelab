@@ -2,7 +2,7 @@
 
 ## Overview
 
-Overwatch Homelab is a multi-tenant homelab management platform built as a TypeScript monorepo. It consists of four runtime components: a PostgreSQL database, a REST + WebSocket API server, a React web client, and a lightweight agent that runs on each managed lab machine.
+Overwatch Homelab is a multi-tenant homelab monitoring platform built as a TypeScript monorepo. It consists of four runtime components: a PostgreSQL database, a REST + WebSocket API server, a React web client, and a lightweight agent that runs on each managed lab machine. The platform collects real-time system metrics from registered lab machines and displays them live in the browser dashboard.
 
 ```
 Browser
@@ -17,7 +17,11 @@ hub-server  (Express + Socket.IO, port 3001)
 postgres  (port 5432)
 
 lab-agent  ──── Socket.IO ────▶  hub-server
-  (each managed machine)
+  (each managed machine)              │
+                                       │  broadcasts lab:metrics
+                                       ▼
+                              Browser (dashboard)
+                                (Socket.IO client)
 ```
 
 ---
@@ -73,17 +77,20 @@ Key libraries: `express`, `express-rate-limit`, `socket.io`, `@prisma/client`, `
 
 A React 18 SPA built with Vite and served as static files via nginx. In production (Docker), nginx also acts as a reverse proxy, forwarding `/api/*` and `/socket.io/*` to `hub-server:3001` on the internal Docker network. This avoids exposing `hub-server` directly to the browser and resolves the Docker internal hostname issue.
 
-Key libraries: `react`, `react-router-dom` v6, `@tanstack/react-query` v5, `tailwindcss`, `lucide-react`
+Key libraries: `react`, `react-router-dom` v6, `@tanstack/react-query` v5, `socket.io-client`, `tailwindcss`, `lucide-react`
 
 **State management:**
 - Server state: TanStack Query (queries + mutations, 30s stale time)
 - Auth state: React Context (`AuthContext`) backed by `localStorage`. A single `AuthProvider` wraps the app so all components share one token/user state.
+- Real-time state: `useLabMetrics` hook — subscribes to `lab:metrics` Socket.IO events and holds the latest `LabMetrics` snapshot per lab
 - UI state: local `useState`
+
+**Socket.IO client:** `lib/socket.ts` exports a singleton `Socket` instance that connects via the nginx-proxied `/socket.io` path (relative URL). It is shared across all components so a single persistent connection serves the whole app. When the `HomeLabPage` mounts, it emits `dashboard:subscribe` with the lab's UUID, causing hub-server to add that socket to the `lab:<labId>` broadcast room.
 
 **Routing:**
 - `/` → redirects to `/overview`
 - `/overview` → HomeLab list + create wizard
-- `/labs/:labId` → HomeLab detail (storage pools, edit, delete)
+- `/labs/:labId` → HomeLab detail: agent config panel, live metrics dashboard, storage pools, edit/delete
 - Unauthenticated users see `LoginPage`; all protected routes are gated by `isAuthenticated` in `App.tsx`
 
 **API client:** `apiFetch` — a thin wrapper around `fetch` that injects the Bearer token, serializes the body, and handles both JSON and `204 No Content` responses.
@@ -147,12 +154,15 @@ User
   homelabs    HomeLab[]
 
 HomeLab
-  id          UUID  PK
-  name        String
-  description String?
-  ownerId     UUID  FK → User (CASCADE DELETE)
-  createdAt   DateTime
-  updatedAt   DateTime
+  id                   UUID  PK
+  name                 String
+  description          String?
+  ownerId              UUID  FK → User (CASCADE DELETE)
+  agentHubUrl          String?    (custom hub URL for the agent; null = use default)
+  heartbeatIntervalMs  Int        @default(15000)
+  metricsIntervalMs    Int        @default(60000)
+  createdAt            DateTime
+  updatedAt            DateTime
   storagePools StoragePool[]
 
 StoragePool
@@ -199,12 +209,12 @@ All subsequent requests include Authorization: Bearer <token>
 ### HomeLab management
 
 ```
-Browser → GET  /api/homelabs              list user's labs
-Browser → POST /api/homelabs              create lab
-Browser → GET  /api/homelabs/:id          get lab + pools
-Browser → PATCH /api/homelabs/:id         update name/description
-Browser → DELETE /api/homelabs/:id        delete lab (cascades pools)
-Browser → POST /api/homelabs/:id/storage-pools   add pool
+Browser → GET  /api/homelabs                           list user's labs
+Browser → POST /api/homelabs                           create lab
+Browser → GET  /api/homelabs/:id                       get lab + pools
+Browser → PATCH /api/homelabs/:id                      update name/description/agent config
+Browser → DELETE /api/homelabs/:id                     delete lab (cascades pools)
+Browser → POST /api/homelabs/:id/storage-pools         add pool
 Browser → DELETE /api/homelabs/:id/storage-pools/:pid  remove pool
 ```
 
@@ -213,13 +223,24 @@ All routes are authenticated. Resources are always scoped to `req.user.userId`.
 ### Real-time agent telemetry
 
 ```
-lab-agent  →  agent:register   →  hub-server (joins room lab:<labId>)
-           →  agent:heartbeat  →  hub-server (updates lastHeartbeat)
-           →  agent:metrics    →  hub-server
-                                    → broadcasts lab:metrics to room lab:<labId>
-                                    → (future) dashboard clients subscribe to room
+lab-agent  →  agent:register        →  hub-server
+                                          joins room lab:<labId>
+                                          ← hub:ack
+
+lab-agent  →  agent:heartbeat       →  hub-server (updates lastHeartbeat)
+
+lab-agent  →  agent:metrics         →  hub-server
+                                          broadcasts lab:metrics
+                                          → room lab:<labId>
+                                               ↓
+                                          browser dashboard (also in room)
+
+Browser    →  dashboard:subscribe   →  hub-server
+                                          joins room lab:<labId>
+                                          (browser now receives lab:metrics)
 ```
 
+The browser dashboard connects via the `socket.io-client` singleton in `lib/socket.ts`. When `HomeLabPage` mounts it emits `dashboard:subscribe`, the hub adds the socket to `lab:<labId>`, and the client receives all subsequent `lab:metrics` broadcasts from the agent in that room.
 ---
 
 ## Local Development
