@@ -39,6 +39,8 @@ socket.on("connect_error", (err) => {
 
 socket.on(HubEvents.ACK, (payload: { success: boolean; message?: string }) => {
   console.log(`[Agent] Hub ACK: ${payload.message ?? "ok"}`);
+  // Send an initial metrics report immediately after successful registration
+  sendMetrics();
 });
 
 // ── Agent actions ───────────────────────────────────────────────────────────

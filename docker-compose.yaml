@@ -58,7 +58,7 @@ services:
     restart: unless-stopped
     environment:
       HUB_URL: "http://hub-server:3001"
-      LAB_ID: "local-agent-1"
+      LAB_ID: "add71a52-ecd3-4962-8052-65b2b655516e"
     depends_on:
       - hub-server
 
