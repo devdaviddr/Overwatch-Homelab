@@ -24,6 +24,11 @@ export async function apiFetch<T = unknown>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
+  // 204 No Content (e.g. DELETE) — no body to parse
+  if (response.status === 204) {
+    return { success: true, data: undefined as T };
+  }
+
   const json = await response.json();
 
   if (!response.ok || !json.success) {
