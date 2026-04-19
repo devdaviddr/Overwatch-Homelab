@@ -35,6 +35,12 @@ const apiLimiter = rateLimit({
 app.use(cors({ origin: CORS_ORIGIN, credentials: true }));
 app.use(express.json());
 
+// BigInt fields (e.g. StoragePool.totalBytes) are not JSON-serializable by default.
+// Override res.json to convert BigInt to Number before serialization.
+app.set("json replacer", (_key: string, value: unknown) =>
+  typeof value === "bigint" ? Number(value) : value
+);
+
 // ── Routes ──────────────────────────────────────────────────────────────────
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
