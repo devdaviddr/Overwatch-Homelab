@@ -99,11 +99,22 @@ A long-running process deployed on each physical or virtual lab machine. It conn
 
 | Event | Interval | Payload |
 |---|---|---|
-| `agent:register` | On connect | `labId`, `agentVersion`, `hostname` |
+| `agent:register` | On connect | `labId`, `agentVersion` |
 | `agent:heartbeat` | Every 15 s | `labId`, `timestamp` |
-| `agent:metrics` | Every 60 s | CPU, memory, disk, uptime |
+| `agent:metrics` | Every 60 s | `LabMetrics` — CPU, memory, disks, network, OS info, uptime |
 
-Metrics are collected via Node's built-in `os` module. Disk metrics are a placeholder (empty array) pending integration with a native library such as `systeminformation`.
+Metrics are collected via the [`systeminformation`](https://www.npmjs.com/package/systeminformation) library (v5). All metric collection is asynchronous. The following `systeminformation` functions are called in parallel on each interval:
+
+| si function | Metrics provided |
+|---|---|
+| `si.cpu()` | manufacturer, brand, cores, physicalCores, base clock speed |
+| `si.currentLoad()` | real-time CPU usage percentage |
+| `si.cpuTemperature()` | CPU temperature (null on unsupported platforms, e.g. macOS) |
+| `si.mem()` | total, used, free, available, swap used/total |
+| `si.fsSize()` | per-filesystem size, used, available, mount point, type |
+| `si.networkInterfaces()` | external interfaces: IP, MAC, operstate, link speed |
+| `si.osInfo()` | platform, distro, release, arch, hostname |
+| `si.time()` | system uptime |
 
 Configuration is entirely via environment variables: `HUB_URL`, `LAB_ID`, `HEARTBEAT_INTERVAL_MS`, `METRICS_INTERVAL_MS`.
 

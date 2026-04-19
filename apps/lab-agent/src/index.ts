@@ -1,5 +1,4 @@
 import "dotenv/config";
-import os from "os";
 import { io } from "socket.io-client";
 import { AgentEvents, HubEvents } from "@overwatch/shared-types";
 import { collectMetrics } from "./metrics.js";
@@ -48,7 +47,6 @@ function register(): void {
   socket.emit(AgentEvents.REGISTER, {
     labId: LAB_ID,
     agentVersion: AGENT_VERSION,
-    hostname: os.hostname(),
   });
 }
 
@@ -59,10 +57,14 @@ function sendHeartbeat(): void {
   });
 }
 
-function sendMetrics(): void {
-  const metrics = collectMetrics(LAB_ID);
-  socket.emit(AgentEvents.METRICS, metrics);
-  console.log(`[Agent] Metrics sent for labId=${LAB_ID}`);
+async function sendMetrics(): Promise<void> {
+  try {
+    const metrics = await collectMetrics(LAB_ID);
+    socket.emit(AgentEvents.METRICS, metrics);
+    console.log(`[Agent] Metrics sent for labId=${LAB_ID}`);
+  } catch (err) {
+    console.error("[Agent] Failed to collect metrics:", err);
+  }
 }
 
 // ── Intervals ───────────────────────────────────────────────────────────────

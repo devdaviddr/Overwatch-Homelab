@@ -1,56 +1,84 @@
-import os from "os";
-import type { CpuMetrics, MemoryMetrics, DiskMetrics, LabMetrics } from "@overwatch/shared-types";
+import si from "systeminformation";
+import type {
+  CpuMetrics,
+  MemoryMetrics,
+  DiskMetrics,
+  NetworkMetrics,
+  OsInfo,
+  LabMetrics,
+} from "@overwatch/shared-types";
 
-/**
- * Collect basic system metrics using Node.js built-in os module.
- * For production use, consider replacing disk collection with
- * a native library like `systeminformation`.
- */
-export function collectMetrics(labId: string): LabMetrics {
-  const cpuInfo = os.cpus();
-  const totalMemory = os.totalmem();
-  const freeMemory = os.freemem();
+export async function collectMetrics(labId: string): Promise<LabMetrics> {
+  const [cpuInfo, load, mem, fsSizes, osInfo, temp, nets, uptime] =
+    await Promise.all([
+      si.cpu(),
+      si.currentLoad(),
+      si.mem(),
+      si.fsSize(),
+      si.osInfo(),
+      si.cpuTemperature(),
+      si.networkInterfaces(),
+      si.time(),
+    ]);
 
   const cpu: CpuMetrics = {
-    // Calculate approximate CPU usage from idle vs total times
-    usagePercent: computeCpuUsagePercent(cpuInfo),
-    cores: cpuInfo.length,
-    model: cpuInfo[0]?.model ?? "Unknown",
+    manufacturer: cpuInfo.manufacturer,
+    brand: cpuInfo.brand,
+    cores: cpuInfo.cores,
+    physicalCores: cpuInfo.physicalCores,
+    speedGHz: cpuInfo.speed,
+    usagePercent: parseFloat(load.currentLoad.toFixed(2)),
+    temperatureCelsius: temp.main ?? null,
   };
 
   const memory: MemoryMetrics = {
-    totalBytes: totalMemory,
-    usedBytes: totalMemory - freeMemory,
-    freeBytes: freeMemory,
+    totalBytes: mem.total,
+    usedBytes: mem.used,
+    freeBytes: mem.free,
+    availableBytes: mem.available,
+    swapTotalBytes: mem.swaptotal,
+    swapUsedBytes: Math.round(mem.swapused),
   };
 
-  // Disk metrics require a native library like `systeminformation`.
-  // This placeholder returns empty disk data until proper integration is added.
-  const disks: DiskMetrics[] = [];
+  const disks: DiskMetrics[] = fsSizes
+    .filter((fs) => fs.size > 0)
+    .map((fs) => ({
+      fs: fs.fs,
+      type: fs.type,
+      mountPoint: fs.mount,
+      totalBytes: fs.size,
+      usedBytes: fs.used,
+      availableBytes: fs.available,
+      usePercent: parseFloat(fs.use.toFixed(2)),
+    }));
+
+  const ifaceList = Array.isArray(nets) ? nets : [nets];
+  const network: NetworkMetrics[] = ifaceList
+    .filter((n) => !n.internal)
+    .map((n) => ({
+      iface: n.iface,
+      ip4: n.ip4 ?? "",
+      mac: n.mac ?? "",
+      operstate: n.operstate ?? "unknown",
+      speedMbps: n.speed ?? null,
+    }));
+
+  const os: OsInfo = {
+    platform: osInfo.platform,
+    distro: osInfo.distro,
+    release: osInfo.release,
+    arch: osInfo.arch,
+    hostname: osInfo.hostname,
+  };
 
   return {
     labId,
     timestamp: new Date().toISOString(),
+    uptimeSeconds: uptime.uptime ?? 0,
+    os,
     cpu,
     memory,
     disks,
-    uptimeSeconds: os.uptime(),
+    network,
   };
-}
-
-function computeCpuUsagePercent(cpus: os.CpuInfo[]): number {
-  let totalIdle = 0;
-  let totalTick = 0;
-
-  for (const cpu of cpus) {
-    for (const type of Object.keys(cpu.times) as (keyof os.CpuInfo["times"])[]) {
-      totalTick += cpu.times[type];
-    }
-    totalIdle += cpu.times.idle;
-  }
-
-  const idle = totalIdle / cpus.length;
-  const total = totalTick / cpus.length;
-
-  return parseFloat(((1 - idle / total) * 100).toFixed(2));
 }
