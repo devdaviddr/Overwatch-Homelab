@@ -1,0 +1,25 @@
+# Development-only docker-compose for the Overwatch Homelab PostgreSQL database.
+# Do NOT use these hardcoded credentials in production.
+# For production, use environment variables or a secrets manager.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: overwatch_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: overwatch
+      POSTGRES_PASSWORD: overwatch_pass
+      POSTGRES_DB: overwatch_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U overwatch -d overwatch_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local
