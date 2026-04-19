@@ -26,6 +26,9 @@ FROM node:20-slim AS runner
 WORKDIR /usr/src/app
 ENV NODE_ENV=production
 
+# Install OpenSSL for Prisma runtime
+RUN apt-get update && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/* || true
+
 # Copy root node_modules (workspace installs), packages, and built server
 COPY --from=builder /usr/src/app/node_modules ./node_modules
 COPY --from=builder /usr/src/app/packages ./packages
