@@ -34,7 +34,7 @@ services:
       CORS_ORIGIN: "http://localhost:5173"
       NODE_ENV: development
     ports:
-      - "3001:3001"
+      - "3002:3001"
     depends_on:
       - postgres
     command: sh -c "npm ci --silent && npm run db:generate && npm run dev"
@@ -50,7 +50,7 @@ services:
     environment:
       NODE_ENV: development
     ports:
-      - "5173:5173"
+      - "5174:5173"
     command: sh -c "npm ci --silent && npm run dev -- --host 0.0.0.0"
 
   lab-agent:
