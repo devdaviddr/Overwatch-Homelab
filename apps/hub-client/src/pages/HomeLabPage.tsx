@@ -1,18 +1,16 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { HardDrive, Server, Loader2, Pencil, Trash2, ActivitySquare, WifiOff } from "lucide-react";
+import { Server, Loader2, Pencil, Trash2, ActivitySquare, WifiOff, Calendar, Clock } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.tsx";
 import { useHomeLab } from "../hooks/useHomeLabs.ts";
 import { useLabMetrics } from "../hooks/useLabMetrics.ts";
 import { EditHomeLabModal } from "../components/EditHomeLabModal.tsx";
 import { DeleteHomeLabDialog } from "../components/DeleteHomeLabDialog.tsx";
 import { AgentConfigPanel } from "../components/AgentConfigPanel.tsx";
-import { MetricsDashboard } from "../components/MetricsDashboard.tsx";function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB", "PB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+import { MetricsDashboard } from "../components/MetricsDashboard.tsx";
+
+function formatDate(dateStr: string) {
+  return new Date(dateStr).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 export function HomeLabPage() {
@@ -40,7 +38,11 @@ export function HomeLabPage() {
     );
   }
 
-  const pools = (lab as unknown as { storagePools: { id: string; name: string; totalBytes: number; usedBytes: number }[] }).storagePools ?? [];
+  const labData = lab as unknown as {
+    id: string; name: string; description?: string | null;
+    agentHubUrl?: string | null; heartbeatIntervalMs: number; metricsIntervalMs: number;
+    createdAt: string; updatedAt: string;
+  };
 
   return (
     <div>
@@ -51,9 +53,9 @@ export function HomeLabPage() {
             <Server className="h-6 w-6 text-brand-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">{lab.name}</h1>
-            {lab.description && (
-              <p className="text-sm text-gray-400">{lab.description}</p>
+            <h1 className="text-2xl font-bold text-white">{labData.name}</h1>
+            {labData.description && (
+              <p className="text-sm text-gray-400">{labData.description}</p>
             )}
           </div>
         </div>
@@ -79,29 +81,30 @@ export function HomeLabPage() {
       {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Storage Pools</p>
-          <p className="text-2xl font-bold text-white">{pools.length}</p>
-        </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Total Capacity</p>
-          <p className="text-2xl font-bold text-white">
-            {formatBytes(pools.reduce((s, p) => s + p.totalBytes, 0))}
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Agent Status</p>
+          <p className={`text-sm font-semibold ${connected ? "text-green-400" : "text-gray-500"}`}>
+            {connected ? "● Connected" : "○ Disconnected"}
           </p>
         </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Used</p>
-          <p className="text-2xl font-bold text-white">
-            {formatBytes(pools.reduce((s, p) => s + p.usedBytes, 0))}
-          </p>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-start gap-2">
+          <Calendar className="h-4 w-4 text-gray-600 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Created</p>
+            <p className="text-sm font-medium text-white">{formatDate(labData.createdAt)}</p>
+          </div>
+        </div>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-start gap-2">
+          <Clock className="h-4 w-4 text-gray-600 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Metrics Interval</p>
+            <p className="text-sm font-medium text-white">{labData.metricsIntervalMs / 1000}s</p>
+          </div>
         </div>
       </div>
 
       {/* Agent Configuration */}
       <div className="mb-8">
-        <AgentConfigPanel
-          lab={lab as unknown as { id: string; name: string; agentHubUrl?: string | null; heartbeatIntervalMs: number; metricsIntervalMs: number }}
-          connected={connected}
-        />
+        <AgentConfigPanel lab={labData} connected={connected} />
       </div>
 
       {/* Live Metrics */}
@@ -121,47 +124,11 @@ export function HomeLabPage() {
               )}
             </div>
             <p className="text-xs text-gray-600">
-              Metrics are pushed every 60 s by the lab-agent running on the monitored machine.
+              Metrics are pushed every {labData.metricsIntervalMs / 1000}s by the lab-agent running on the monitored machine.
             </p>
           </div>
         )}
       </div>
-
-      <h2 className="text-lg font-semibold text-gray-200 mb-3">Storage Pools</h2>
-      {pools.length === 0 ? (
-        <div className="text-center text-gray-500 mt-8">
-          <HardDrive className="h-12 w-12 mx-auto mb-3 opacity-30" />
-          <p>No storage pools configured for this homelab.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {pools.map((pool) => {
-            const usedPct = pool.totalBytes > 0
-              ? Math.round((pool.usedBytes / pool.totalBytes) * 100)
-              : 0;
-            const barColor = usedPct > 90 ? "bg-red-500" : usedPct > 70 ? "bg-yellow-500" : "bg-brand-500";
-
-            return (
-              <div key={pool.id} className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <HardDrive className="h-4 w-4 text-brand-400" />
-                  <span className="font-medium text-white">{pool.name}</span>
-                </div>
-                <div className="h-2 bg-gray-800 rounded-full overflow-hidden mb-2">
-                  <div
-                    className={`h-full ${barColor} rounded-full transition-all`}
-                    style={{ width: `${usedPct}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>{formatBytes(pool.usedBytes)} used</span>
-                  <span>{formatBytes(pool.totalBytes)} total</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
 
       {showEdit && (
         <EditHomeLabModal

@@ -24,34 +24,17 @@ model User {
 }
 
 model HomeLab {
-  id          String   @id @default(uuid())
-  name        String
-  description String?
-  ownerId     String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                  String   @id @default(uuid())
+  name                String
+  description         String?
+  ownerId             String
+  agentHubUrl         String?
+  heartbeatIntervalMs Int      @default(15000)
+  metricsIntervalMs   Int      @default(60000)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  // Agent connection configuration
-  agentHubUrl          String?
-  heartbeatIntervalMs  Int     @default(15000)
-  metricsIntervalMs    Int     @default(60000)
-
-  owner        User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  storagePools StoragePool[]
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   @@map("homelabs")
-}
-
-model StoragePool {
-  id         String   @id @default(uuid())
-  name       String
-  totalBytes BigInt   @default(0)
-  usedBytes  BigInt   @default(0)
-  homeLabId  String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  homeLab HomeLab @relation(fields: [homeLabId], references: [id], onDelete: Cascade)
-
-  @@map("storage_pools")
 }

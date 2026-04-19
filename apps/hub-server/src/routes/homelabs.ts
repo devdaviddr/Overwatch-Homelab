@@ -20,7 +20,6 @@ homeLabRouter.use(authenticate);
 homeLabRouter.get("/", async (req: Request, res: Response): Promise<void> => {
   const labs = await prisma.homeLab.findMany({
     where: { ownerId: req.user!.userId },
-    include: { storagePools: true },
     orderBy: { createdAt: "asc" },
   });
   res.json({ success: true, data: labs });
@@ -30,7 +29,6 @@ homeLabRouter.get("/", async (req: Request, res: Response): Promise<void> => {
 homeLabRouter.get("/:id", async (req: Request, res: Response): Promise<void> => {
   const lab = await prisma.homeLab.findFirst({
     where: { id: req.params.id, ownerId: req.user!.userId },
-    include: { storagePools: true },
   });
 
   if (!lab) {
@@ -57,7 +55,6 @@ homeLabRouter.post("/", async (req: Request, res: Response): Promise<void> => {
 
   const lab = await prisma.homeLab.create({
     data: { ...parsed.data, ownerId: req.user!.userId },
-    include: { storagePools: true },
   });
 
   res.status(201).json({ success: true, data: lab });
@@ -89,7 +86,6 @@ homeLabRouter.patch("/:id", async (req: Request, res: Response): Promise<void> =
   const updated = await prisma.homeLab.update({
     where: { id: req.params.id },
     data: parsed.data,
-    include: { storagePools: true },
   });
 
   res.json({ success: true, data: updated });

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Server, HardDrive, Activity, Plus } from "lucide-react";
+import { Server, Activity, Plus } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.tsx";
 import { useHomeLabs } from "../hooks/useHomeLabs.ts";
 import { CreateHomeLabWizard } from "../components/CreateHomeLabWizard.tsx";
@@ -53,10 +53,6 @@ export function OverviewPage() {
             </div>
 
             <div className="flex items-center gap-4 text-xs text-gray-500">
-              <span className="flex items-center gap-1">
-                <HardDrive className="h-3.5 w-3.5" />
-                {(lab as { storagePools?: unknown[] }).storagePools?.length ?? 0} storage pool(s)
-              </span>
               <span className="flex items-center gap-1">
                 <Activity className="h-3.5 w-3.5" />
                 Configured

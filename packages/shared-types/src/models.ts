@@ -50,28 +50,3 @@ export const CreateHomeLabSchema = z.object({
 });
 
 export type CreateHomeLabInput = z.infer<typeof CreateHomeLabSchema>;
-
-// ─────────────────────────────────────────────
-// StoragePool
-// ─────────────────────────────────────────────
-
-export const StoragePoolSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string(),
-  totalBytes: z.number().int().nonnegative(),
-  usedBytes: z.number().int().nonnegative(),
-  homeLabId: z.string().uuid(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-});
-
-export type StoragePool = z.infer<typeof StoragePoolSchema>;
-
-export const CreateStoragePoolSchema = z.object({
-  name: z.string().min(1),
-  totalBytes: z.number().int().nonnegative(),
-  usedBytes: z.number().int().nonnegative().default(0),
-  homeLabId: z.string().uuid(),
-});
-
-export type CreateStoragePoolInput = z.infer<typeof CreateStoragePoolSchema>;
