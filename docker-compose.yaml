@@ -1,4 +1,4 @@
-# Development-only docker-compose for the Overwatch Homelab PostgreSQL database.
+# Development-only docker-compose for the Overwatch Homelab services (DB, server, client, agent).
 # Do NOT use these hardcoded credentials in production.
 # For production, use environment variables or a secrets manager.
 services:
@@ -19,6 +19,55 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  hub-server:
+    image: node:20-slim
+    container_name: overwatch_hub_server
+    restart: unless-stopped
+    working_dir: /usr/src/app
+    volumes:
+      - ./apps/hub-server:/usr/src/app
+      - /usr/src/app/node_modules
+    environment:
+      DATABASE_URL: "postgresql://overwatch:overwatch_pass@postgres:5432/overwatch_db"
+      PORT: "3001"
+      CORS_ORIGIN: "http://localhost:5173"
+      NODE_ENV: development
+    ports:
+      - "3001:3001"
+    depends_on:
+      - postgres
+    command: sh -c "npm ci --silent && npm run db:generate && npm run dev"
+
+  hub-client:
+    image: node:20-slim
+    container_name: overwatch_hub_client
+    restart: unless-stopped
+    working_dir: /usr/src/app
+    volumes:
+      - ./apps/hub-client:/usr/src/app
+      - /usr/src/app/node_modules
+    environment:
+      NODE_ENV: development
+    ports:
+      - "5173:5173"
+    command: sh -c "npm ci --silent && npm run dev -- --host 0.0.0.0"
+
+  lab-agent:
+    image: node:20-slim
+    container_name: overwatch_lab_agent
+    restart: unless-stopped
+    working_dir: /usr/src/app
+    volumes:
+      - ./apps/lab-agent:/usr/src/app
+      - /usr/src/app/node_modules
+    environment:
+      HUB_URL: "http://hub-server:3001"
+      LAB_ID: "local-agent-1"
+      NODE_ENV: development
+    depends_on:
+      - hub-server
+    command: sh -c "npm ci --silent && npm run dev"
 
 volumes:
   postgres_data:
