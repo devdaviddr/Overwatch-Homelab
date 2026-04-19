@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { HardDrive, Server, Loader2, Pencil, Trash2 } from "lucide-react";
+import { HardDrive, Server, Loader2, Pencil, Trash2, ActivitySquare, WifiOff } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.tsx";
 import { useHomeLab } from "../hooks/useHomeLabs.ts";
+import { useLabMetrics } from "../hooks/useLabMetrics.ts";
 import { EditHomeLabModal } from "../components/EditHomeLabModal.tsx";
 import { DeleteHomeLabDialog } from "../components/DeleteHomeLabDialog.tsx";
+import { MetricsDashboard } from "../components/MetricsDashboard.tsx";
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -19,6 +21,7 @@ export function HomeLabPage() {
   const { token } = useAuth();
   const navigate = useNavigate();
   const { data: lab, isLoading, error } = useHomeLab(token, labId);
+  const { metrics, connected, lastUpdated } = useLabMetrics(labId);
   const [showEdit, setShowEdit] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
 
@@ -94,8 +97,30 @@ export function HomeLabPage() {
         </div>
       </div>
 
-      <h2 className="text-lg font-semibold text-gray-200 mb-3">Storage Pools</h2>
+      {/* Live Metrics */}
+      <div className="mb-8">
+        {metrics ? (
+          <MetricsDashboard metrics={metrics} lastUpdated={lastUpdated} connected={connected} />
+        ) : (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <ActivitySquare className="h-5 w-5 text-gray-600" />
+              {connected ? (
+                <span className="text-gray-400 text-sm">Waiting for first metrics report from agent…</span>
+              ) : (
+                <span className="text-gray-500 text-sm flex items-center gap-1">
+                  <WifiOff className="h-4 w-4" /> No agent connected for this lab
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-600">
+              Metrics are pushed every 60 s by the lab-agent running on the monitored machine.
+            </p>
+          </div>
+        )}
+      </div>
 
+      <h2 className="text-lg font-semibold text-gray-200 mb-3">Storage Pools</h2>
       {pools.length === 0 ? (
         <div className="text-center text-gray-500 mt-8">
           <HardDrive className="h-12 w-12 mx-auto mb-3 opacity-30" />

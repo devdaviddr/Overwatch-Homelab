@@ -9,7 +9,6 @@ import type {
 
 interface ConnectedAgent {
   labId: string;
-  hostname: string;
   agentVersion: string;
   connectedAt: Date;
   lastHeartbeat: Date;
@@ -30,11 +29,10 @@ export function setupSocketServer(httpServer: HttpServer, corsOrigin: string): S
 
     // Agent registers itself with a labId
     socket.on(AgentEvents.REGISTER, (payload: AgentRegisterPayload) => {
-      console.log(`[Socket] Agent registered: labId=${payload.labId}, host=${payload.hostname}`);
+      console.log(`[Socket] Agent registered: labId=${payload.labId}`);
 
       const agent: ConnectedAgent = {
         labId: payload.labId,
-        hostname: payload.hostname,
         agentVersion: payload.agentVersion,
         connectedAt: new Date(),
         lastHeartbeat: new Date(),
@@ -44,6 +42,14 @@ export function setupSocketServer(httpServer: HttpServer, corsOrigin: string): S
       socket.join(`lab:${payload.labId}`);
 
       socket.emit(HubEvents.ACK, { success: true, message: "Registered successfully" });
+    });
+
+    // Dashboard client subscribes to a lab's metrics stream
+    socket.on("dashboard:subscribe", (payload: { labId: string }) => {
+      if (payload?.labId) {
+        socket.join(`lab:${payload.labId}`);
+        console.log(`[Socket] Dashboard subscribed to lab:${payload.labId}`);
+      }
     });
 
     // Heartbeat from agent
