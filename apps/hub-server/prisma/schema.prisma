@@ -31,6 +31,11 @@ model HomeLab {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Agent connection configuration
+  agentHubUrl          String?
+  heartbeatIntervalMs  Int     @default(15000)
+  metricsIntervalMs    Int     @default(60000)
+
   owner        User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   storagePools StoragePool[]
 

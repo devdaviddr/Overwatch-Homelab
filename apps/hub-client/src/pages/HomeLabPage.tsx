@@ -6,9 +6,8 @@ import { useHomeLab } from "../hooks/useHomeLabs.ts";
 import { useLabMetrics } from "../hooks/useLabMetrics.ts";
 import { EditHomeLabModal } from "../components/EditHomeLabModal.tsx";
 import { DeleteHomeLabDialog } from "../components/DeleteHomeLabDialog.tsx";
-import { MetricsDashboard } from "../components/MetricsDashboard.tsx";
-
-function formatBytes(bytes: number): string {
+import { AgentConfigPanel } from "../components/AgentConfigPanel.tsx";
+import { MetricsDashboard } from "../components/MetricsDashboard.tsx";function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB", "TB", "PB"];
@@ -95,6 +94,14 @@ export function HomeLabPage() {
             {formatBytes(pools.reduce((s, p) => s + p.usedBytes, 0))}
           </p>
         </div>
+      </div>
+
+      {/* Agent Configuration */}
+      <div className="mb-8">
+        <AgentConfigPanel
+          lab={lab as unknown as { id: string; name: string; agentHubUrl?: string | null; heartbeatIntervalMs: number; metricsIntervalMs: number }}
+          connected={connected}
+        />
       </div>
 
       {/* Live Metrics */}

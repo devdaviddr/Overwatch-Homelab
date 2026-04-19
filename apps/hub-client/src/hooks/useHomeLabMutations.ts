@@ -21,7 +21,18 @@ export function useCreateHomeLab(token: string | null) {
 
 export function useUpdateHomeLab(token: string | null) {
   const queryClient = useQueryClient();
-  return useMutation<HomeLab, Error, { id: string; name?: string; description?: string | null }>({
+  return useMutation<
+    HomeLab,
+    Error,
+    {
+      id: string;
+      name?: string;
+      description?: string | null;
+      agentHubUrl?: string | null;
+      heartbeatIntervalMs?: number;
+      metricsIntervalMs?: number;
+    }
+  >({
     mutationFn: async ({ id, ...body }) => {
       const res = await apiFetch<HomeLab>(`/api/homelabs/${id}`, {
         method: "PATCH",
