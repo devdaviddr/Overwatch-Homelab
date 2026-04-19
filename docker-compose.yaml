@@ -37,7 +37,7 @@ services:
       - "3002:3001"
     depends_on:
       - postgres
-    command: sh -c "npm ci --silent && npm run db:generate && npm run dev"
+    command: sh -c "npm install --silent && npm run db:generate && npm run dev"
 
   hub-client:
     image: node:20-slim
@@ -51,7 +51,7 @@ services:
       NODE_ENV: development
     ports:
       - "5174:5173"
-    command: sh -c "npm ci --silent && npm run dev -- --host 0.0.0.0"
+    command: sh -c "npm install --silent && npm run dev -- --host 0.0.0.0"
 
   lab-agent:
     image: node:20-slim
@@ -67,7 +67,7 @@ services:
       NODE_ENV: development
     depends_on:
       - hub-server
-    command: sh -c "npm ci --silent && npm run dev"
+    command: sh -c "npm install --silent && npm run dev"
 
 volumes:
   postgres_data:
