@@ -21,8 +21,9 @@ FROM node:20-slim AS runner
 WORKDIR /usr/src/app
 ENV NODE_ENV=production
 
-# Copy root node_modules (workspace installs) and built server
+# Copy root node_modules (workspace installs), packages, and built server
 COPY --from=builder /usr/src/app/node_modules ./node_modules
+COPY --from=builder /usr/src/app/packages ./packages
 COPY --from=builder /usr/src/app/apps/hub-server/dist ./apps/hub-server/dist
 
 WORKDIR /usr/src/app/apps/hub-server

@@ -18,6 +18,7 @@ WORKDIR /usr/src/app
 ENV NODE_ENV=production
 
 COPY --from=builder /usr/src/app/node_modules ./node_modules
+COPY --from=builder /usr/src/app/packages ./packages
 COPY --from=builder /usr/src/app/apps/lab-agent/dist ./apps/lab-agent/dist
 
 WORKDIR /usr/src/app/apps/lab-agent
