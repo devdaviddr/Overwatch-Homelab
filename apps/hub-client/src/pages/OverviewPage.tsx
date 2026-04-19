@@ -35,9 +35,10 @@ export function OverviewPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {labs?.map((lab) => (
-          <div
+          <button
             key={lab.id}
-            className="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col gap-3"
+            onClick={() => navigate(`/labs/${lab.id}`)}
+            className="text-left bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col gap-3 hover:border-brand-700 hover:bg-gray-800/60 transition-colors cursor-pointer"
           >
             <div className="flex items-center gap-3">
               <div className="p-2 bg-brand-900/40 rounded-lg">
@@ -61,7 +62,7 @@ export function OverviewPage() {
                 Configured
               </span>
             </div>
-          </div>
+          </button>
         ))}
       </div>
 
