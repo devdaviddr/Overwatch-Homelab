@@ -28,17 +28,27 @@ export function useLabMetrics(labId: string | undefined): LabMetricsState {
 
     const socket = getSocket();
 
-    function onConnect() {
-      setConnected(true);
+    function subscribe() {
       socket.emit("dashboard:subscribe", { labId });
+    }
+
+    function onConnect() {
+      subscribe();
     }
 
     function onDisconnect() {
       setConnected(false);
     }
 
+    function onAgentStatus(payload: { labId: string; connected: boolean }) {
+      if (payload.labId === labId) {
+        setConnected(payload.connected);
+      }
+    }
+
     function onMetrics(payload: LabMetrics) {
       if (payload.labId !== labId) return;
+      setConnected(true);
       setMetrics(payload);
       setLastUpdated(new Date());
       const memPct =
@@ -52,17 +62,18 @@ export function useLabMetrics(labId: string | undefined): LabMetricsState {
     }
 
     if (socket.connected) {
-      setConnected(true);
-      socket.emit("dashboard:subscribe", { labId });
+      subscribe();
     }
 
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
+    socket.on("lab:agent-status", onAgentStatus);
     socket.on("lab:metrics", onMetrics);
 
     return () => {
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
+      socket.off("lab:agent-status", onAgentStatus);
       socket.off("lab:metrics", onMetrics);
     };
   }, [labId]);

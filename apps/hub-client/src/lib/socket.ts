@@ -1,12 +1,14 @@
 import { io, Socket } from "socket.io-client";
 
-// Single shared socket connection for the whole app.
-// Uses a relative URL so nginx proxies it to hub-server.
+// Connect directly to hub-server using the same base URL as the REST API,
+// so socket.io bypasses the nginx proxy (same path as api.ts).
+const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+
 let socket: Socket | null = null;
 
 export function getSocket(): Socket {
   if (!socket) {
-    socket = io("/", {
+    socket = io(BASE_URL, {
       path: "/socket.io",
       reconnection: true,
       reconnectionDelay: 3000,

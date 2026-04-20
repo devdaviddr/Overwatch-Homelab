@@ -3,6 +3,7 @@ import { X, Server, Database, Monitor, ChevronRight, ChevronLeft, Check, Loader2
 import { useAuth } from "../hooks/useAuth.tsx";
 import { useCreateHomeLab } from "../hooks/useHomeLabMutations.ts";
 import { RESOURCE_TYPE_CONFIG } from "../lib/resourceTypes.ts";
+import { apiFetch } from "../lib/api.ts";
 import type { ResourceType } from "@overwatch/shared-types";
 
 interface Props {
@@ -13,6 +14,10 @@ interface Props {
 const STEPS = ["Basic Info", "Type & Labels", "Agent Configuration", "Review"] as const;
 
 const TYPE_OPTIONS: ResourceType[] = ["HOMELAB", "SERVER", "PC"];
+
+type Platform = "mac" | "linux" | "windows";
+
+const isMac = navigator.platform.startsWith("Mac") || /Mac OS/.test(navigator.userAgent);
 
 function ResourceTypeIcon({ type, className }: { type: ResourceType; className?: string }) {
   const { iconName } = RESOURCE_TYPE_CONFIG[type];
@@ -69,6 +74,14 @@ function TagInput({ tags, onChange }: { tags: string[]; onChange: (t: string[]) 
   );
 }
 
+const PLATFORM_OPTIONS: { value: Platform; label: string }[] = [
+  { value: "mac", label: "macOS" },
+  { value: "linux", label: "Linux" },
+  { value: "windows", label: "Windows" },
+];
+
+const detectedPlatform: Platform = isMac ? "mac" : "linux";
+
 export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
   const { token } = useAuth();
   const createLab = useCreateHomeLab(token);
@@ -79,13 +92,15 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
   const [resourceType, setResourceType] = useState<ResourceType>("HOMELAB");
   const [labels, setLabels] = useState<string[]>([]);
 
-  // Agent configuration fields (new in v0.1.1)
+  // Agent configuration fields
+  const [platform, setPlatform] = useState<Platform>(detectedPlatform);
   const [agentHubUrl, setAgentHubUrl] = useState<string>("http://localhost:3002");
   const [heartbeatIntervalMs, setHeartbeatIntervalMs] = useState<number>(15000);
   const [metricsIntervalMs, setMetricsIntervalMs] = useState<number>(60000);
   const [runInDocker, setRunInDocker] = useState<boolean>(false);
 
   const [error, setError] = useState<string | null>(null);
+  const [launchState, setLaunchState] = useState<"idle" | "launching" | "launched" | "failed">("idle");
 
   function canAdvance() {
     if (step === 0) return name.trim().length > 0;
@@ -97,8 +112,9 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
 
   async function handleCreate() {
     setError(null);
+    setLaunchState("idle");
     try {
-        const lab = await createLab.mutateAsync({
+      const lab = await createLab.mutateAsync({
         name: name.trim(),
         description: description.trim() || undefined,
         resourceType,
@@ -107,6 +123,39 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
         heartbeatIntervalMs,
         metricsIntervalMs,
       });
+
+      // Auto-launch agent on macOS if hub supports it
+      if (platform === "mac") {
+        setLaunchState("launching");
+        try {
+          const capRes = await apiFetch<{ canLaunch: boolean; reason?: string }>(
+            "/api/agent/capabilities",
+            { token }
+          );
+          if (capRes.data.canLaunch) {
+            const launchRes = await apiFetch<{ launched: boolean; pid?: number; reason?: string }>(
+              `/api/agent/${lab.id}/launch`,
+              {
+                method: "POST",
+                token,
+                body: {
+                  hubUrl: agentHubUrl,
+                  heartbeatIntervalMs,
+                  metricsIntervalMs,
+                },
+              }
+            );
+            setLaunchState(launchRes.data.launched ? "launched" : "failed");
+          } else {
+            // Hub is in Docker mode — skip launch silently
+            setLaunchState("failed");
+          }
+        } catch {
+          // Launch errors are non-fatal — proceed regardless
+          setLaunchState("failed");
+        }
+      }
+
       onCreated(lab.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -218,6 +267,36 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
           {/* Step 2: Agent Configuration */}
           {step === 2 && (
             <div className="space-y-4">
+              {/* Platform selector */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Platform</label>
+                <div className="flex gap-2">
+                  {PLATFORM_OPTIONS.map(({ value, label }) => {
+                    const selected = platform === value;
+                    const isDetected = value === detectedPlatform;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setPlatform(value)}
+                        className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm font-medium transition-all ${
+                          selected
+                            ? "bg-brand-600 border-brand-500 text-white"
+                            : "bg-gray-800/60 border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+                        }`}
+                      >
+                        {label}
+                        {isDetected && (
+                          <span className="text-[10px] text-gray-400 font-normal leading-none">
+                            detected
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1">Hub URL</label>
@@ -253,16 +332,26 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <input
-                    id="runInDocker"
-                    type="checkbox"
-                    checked={runInDocker}
-                    onChange={(e) => setRunInDocker(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  <label htmlFor="runInDocker" className="text-sm text-gray-300">Run in Docker (Linux only)</label>
-                </div>
+                {/* Docker option — hidden on macOS, shown on Linux/Windows */}
+                {platform !== "mac" ? (
+                  <div className="flex items-center gap-3">
+                    <input
+                      id="runInDocker"
+                      type="checkbox"
+                      checked={runInDocker}
+                      onChange={(e) => setRunInDocker(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    <label htmlFor="runInDocker" className="text-sm text-gray-300">Run in Docker</label>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2.5 px-3 py-2.5 bg-amber-950/40 border border-amber-800/50 rounded-lg">
+                    <span className="text-amber-400 text-sm leading-none mt-0.5">⚠</span>
+                    <p className="text-xs text-amber-200/80 leading-relaxed">
+                      Docker on macOS reports VM specs (4 CPU / ~7 GB RAM), not real hardware. Native mode is required.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -312,6 +401,10 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
 
                 <div className="ml-6 mt-2 text-sm text-gray-300 space-y-1">
                   <div>
+                    <span className="text-gray-400">Platform:</span>{" "}
+                    <span className="text-white capitalize">{platform === "mac" ? "macOS" : platform}</span>
+                  </div>
+                  <div>
                     <span className="text-gray-400">Hub URL:</span> <span className="text-white">{agentHubUrl}</span>
                   </div>
                   <div>
@@ -321,10 +414,26 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
                     <span className="text-gray-400">Metrics interval:</span> <span className="text-white">{metricsIntervalMs} ms</span>
                   </div>
                 </div>
-
               </div>
+
+              {/* macOS auto-launch status */}
+              {platform === "mac" && launchState === "launching" && (
+                <div className="flex items-center gap-2 text-sm text-gray-300">
+                  <Loader2 className="h-4 w-4 animate-spin text-brand-400" />
+                  <span>Starting agent on this Mac…</span>
+                </div>
+              )}
+              {platform === "mac" && launchState === "launched" && (
+                <div className="flex items-center gap-2 text-sm text-green-400">
+                  <Check className="h-4 w-4" />
+                  <span>Agent started — will connect shortly</span>
+                </div>
+              )}
+
               <p className="text-xs text-gray-500">
-                After creating, you'll be taken to the configuration page to connect a lab-agent.
+                {platform === "mac"
+                  ? "After creating, the agent will be started automatically on this Mac."
+                  : "After creating, you'll be taken to the configuration page to connect a lab-agent."}
               </p>
               {error && <p className="text-red-400 text-sm">{error}</p>}
             </div>
@@ -354,11 +463,21 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
           ) : (
             <button
               onClick={handleCreate}
-              disabled={createLab.isPending}
+              disabled={createLab.isPending || launchState === "launching"}
               className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors"
             >
-              {createLab.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              {createLab.isPending ? "Creating…" : "Create Resource"}
+              {createLab.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : launchState === "launching" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="h-4 w-4" />
+              )}
+              {createLab.isPending
+                ? "Creating…"
+                : launchState === "launching"
+                ? "Starting agent…"
+                : "Create Resource"}
             </button>
           )}
         </div>
