@@ -5,11 +5,15 @@ import type { Components } from "react-markdown";
 import gettingStartedContent from "../help/getting-started.md?raw";
 import agentSetupContent from "../help/agent-setup.md?raw";
 import architectureContent from "../help/architecture.md?raw";
+import alertsAndRetentionContent from "../help/alerts-and-retention.md?raw";
+import profileAndSecurityContent from "../help/profile-and-security.md?raw";
 import faqContent from "../help/faq.md?raw";
 
 const TOPICS = [
   { id: "getting-started", content: gettingStartedContent },
   { id: "agent-setup", content: agentSetupContent },
+  { id: "alerts-and-retention", content: alertsAndRetentionContent },
+  { id: "profile-and-security", content: profileAndSecurityContent },
   { id: "architecture", content: architectureContent },
   { id: "faq", content: faqContent },
 ] as const;

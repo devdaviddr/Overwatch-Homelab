@@ -13,12 +13,16 @@ import {
   PlayCircle,
   Cpu,
   Network,
+  Bell,
+  Lock,
 } from "lucide-react";
 import { useActiveAlertCount } from "../hooks/useActiveAlerts.ts";
 
 const HELP_TOPICS = [
   { id: "getting-started", title: "Getting Started", icon: PlayCircle },
   { id: "agent-setup", title: "Agent Setup", icon: Cpu },
+  { id: "alerts-and-retention", title: "Alerts & Retention", icon: Bell },
+  { id: "profile-and-security", title: "Profile & Security", icon: Lock },
   { id: "architecture", title: "Architecture", icon: Network },
   { id: "faq", title: "FAQ", icon: HelpCircle },
 ];
