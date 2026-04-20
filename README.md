@@ -1,26 +1,26 @@
 # Overwatch Homelab
 
-A multi-tenant resource monitoring platform that collects real system metrics from registered machines and displays them live in a mission-control-style browser dashboard. Built as a TypeScript monorepo using npm workspaces.
+A multi-tenant resource monitoring platform that collects real system metrics from registered machines, persists them for historical analysis, and displays them live in a mission-control-style browser dashboard. Built as a TypeScript monorepo using npm workspaces.
 
-**Current release:** v0.1.0 · [Spec](spec/0.1.0/0.1.0.md) · [Architecture](spec/architecture.md)  
-**Next release:** v0.2.0 — historical metrics, time-range charts, alerting · [Spec](spec/0.2.0/0.2.0.md)
+**Current release:** v0.2.0 — historical metrics, time-range charts, threshold alerting, profile management, platform hardening · [Spec](spec/0.2.0/0.2.0.md) · [Architecture](spec/architecture.md)
+**Previous:** [v0.1.0](spec/0.1.0/0.1.0.md) · [v0.1.1](spec/0.1.1/0.1.1.md) · [v0.1.2](spec/0.1.2/0.1.2.md)
 
 ## Monorepo Structure
 
 ```
 overwatch-homelab/
 ├── apps/
-│   ├── hub-server/          # Express API + Socket.IO (Prisma + JWT)
+│   ├── hub-server/          # Express API + Socket.IO (Prisma + JWT + Vitest)
 │   ├── hub-client/          # React + Tailwind CSS dashboard (nginx)
 │   └── lab-agent/           # Lightweight agent that runs on each monitored machine
 ├── packages/
 │   └── shared-types/        # Shared Zod schemas & TypeScript interfaces
 ├── spec/
 │   ├── architecture.md      # Living architecture document
-│   ├── 0.1.0/               # v0.1.0 spec (current)
-│   └── 0.2.0/               # v0.2.0 spec (planned)
+│   ├── 0.1.0/  0.1.1/  0.1.2/
+│   └── 0.2.0/               # current release spec
 ├── docker-compose.yaml      # Full local stack (postgres, hub-server, hub-client)
-├── tsconfig.base.json       # Shared TypeScript config
+├── tsconfig.base.json
 └── package.json             # npm workspaces root
 ```
 
@@ -34,9 +34,11 @@ overwatch-homelab/
 
 ## Running with Docker Compose (recommended)
 
-Builds and starts the hub infrastructure (postgres, hub-server, hub-client):
+v0.2.0 requires `JWT_SECRET`. Copy the template once — `docker-compose` auto-loads `.env` from the repo root:
 
 ```bash
+cp .env.example .env
+# Edit .env — replace the placeholder with: openssl rand -hex 32
 docker compose up --build
 ```
 
@@ -46,11 +48,9 @@ docker compose up --build
 | API | http://localhost:3002 |
 | Database | localhost:5432 |
 
-Default login: `admin@example.com` / `AdminPass123!`
+Open the dashboard and use the **Sign up** tab to create your first account. You'll be shown a one-time recovery token — save it in your password manager; it's what lets you reset the password if you forget it.
 
-> **Note:** The `lab-agent` service in docker-compose is provided for Linux hosts only.
-> On macOS, Docker runs inside a Linux VM — the agent will report VM specs, not your real hardware.
-> See [Running the agent natively](#running-the-agent-natively) below.
+> **Note:** The `lab-agent` service is gated behind the `agent` compose profile — default `docker compose up` only starts postgres + hub-server + hub-client. On macOS, run the agent natively (see below). On Linux, opt in with `docker compose --profile agent up -d` after setting `LAB_ID` in `.env`.
 
 ---
 
@@ -64,14 +64,13 @@ Log in, click **New Resource**, complete the 3-step wizard (name, type, labels) 
 
 ### 2. Copy the LAB_ID
 
-The HomeLab detail page shows the agent configuration panel with your `LAB_ID` (UUID) and `HUB_URL` pre-filled. Copy the `.env` snippet.
+The Configuration tab shows the agent panel with your `LAB_ID` (UUID) and `HUB_URL` pre-filled. Copy the `.env` snippet.
 
 ### 3. Configure the agent
 
 ```bash
-# From the repo root:
 cp apps/lab-agent/.env.example apps/lab-agent/.env
-# Edit apps/lab-agent/.env and set LAB_ID and HUB_URL
+# Edit and set LAB_ID and HUB_URL
 ```
 
 ```env
@@ -96,6 +95,8 @@ Or for development (auto-reloads):
 cd apps/lab-agent && npm run dev
 ```
 
+v0.2.0 adds an exponential reconnect backoff (2 s → 30 s cap with jitter) and a structured startup banner so it's easier to see the agent's configuration at a glance.
+
 ---
 
 ## Local Development (without Docker)
@@ -105,13 +106,13 @@ cd apps/lab-agent && npm run dev
 docker compose up -d postgres
 
 # 2. Copy and configure env files
-cp apps/hub-server/.env.example apps/hub-server/.env  # set JWT_SECRET, DATABASE_URL
-cp apps/lab-agent/.env.example  apps/lab-agent/.env   # set LAB_ID, HUB_URL
+cp apps/hub-server/.env.example apps/hub-server/.env   # set JWT_SECRET, DATABASE_URL, CORS_ORIGIN
+cp apps/lab-agent/.env.example  apps/lab-agent/.env    # set LAB_ID, HUB_URL
 
 # 3. Install dependencies
 npm install
 
-# 4. Push the DB schema
+# 4. Push the DB schema (v0.2.0 adds MetricSnapshot + Alert tables)
 cd apps/hub-server && npx prisma db push && cd ../..
 
 # 5. Start hub-server and hub-client in separate terminals
@@ -126,44 +127,64 @@ Dashboard: http://localhost:5173 | API: http://localhost:3001
 
 ---
 
+## Testing
+
+```bash
+npm run test --workspace=apps/hub-server     # 47 Vitest unit/middleware tests (~1.1 s)
+npm run typecheck                            # cascades across all workspaces; rebuilds shared-types first
+```
+
+Coverage in v0.2.0: cursor pagination, time-bucket downsampling, password policy, env validator, alert evaluator, retention pruner, socket auth middleware, recovery tokens, reset-password schema. Client + lab-agent tests are deferred to v0.3.0.
+
+---
+
 ## Apps
 
 ### `apps/hub-server`
 
 Express API with:
 
-- **JWT authentication** (`POST /api/auth/register`, `POST /api/auth/login`)
-- **Resource CRUD** (`/api/homelabs`) — create (with type + labels), list, get, update, delete
-- **Socket.IO** server for real-time agent connections and live metrics broadcasting
+- **JWT authentication** — `POST /api/auth/register` (returns one-time `recoveryToken`), `POST /api/auth/login`, `PATCH /api/auth/profile`
+- **Password reset (no email)** — `POST /api/auth/reset-password` takes `{ email, recoveryToken, newPassword }`, rotates the token on success; `POST /api/auth/recovery-token` regenerates the token from an authenticated session
+- **Resource CRUD** (`/api/homelabs`) — create, list (cursor-paginated), get, update, delete
+- **Historical metrics** — `GET /api/homelabs/:id/metrics` with `from`/`to`/`resolution` query params and server-side time-bucket averaging
+- **Alerts** — `GET /api/homelabs/:id/alerts`, `POST /api/homelabs/:id/alerts/:alertId/acknowledge`
+- **Socket.IO** — JWT-authenticated dashboard handshake; ownership-checked `dashboard:subscribe`; `agent:register` validates labId exists (rejects unknown labs with `hub:error UNKNOWN_LAB`); `lab:alert` / `lab:alert-resolved` broadcasts; stale-agent pruner (60 s)
+- **Background jobs** — retention pruner (6 h) deletes snapshots older than each lab's `retentionDays`
+- **Startup env validation** — fails fast with a diagnostic list if `DATABASE_URL`, `JWT_SECRET`, or `CORS_ORIGIN` are missing or malformed
 
 ### `apps/hub-client`
 
 React dashboard with:
 
-- Login page with JWT auth
-- **Overview** page — Resource cards with type badge (Homelab / Server / PC), labels, and description
-- **Resource detail** page — two tabs:
-  - **Monitor**: mission control dashboard (circular CPU/memory gauges, 30-point sparklines, disk grid, network grid, status bar)
-  - **Configuration**: agent config panel, edit resource (name, description, type, labels), delete
-- **3-step create wizard**: Basic Info → Type & Labels → Review
+- **Auth page** — Sign in / Sign up / Reset password tabs. Signup and reset each show the one-time recovery token in a dedicated modal (copy-once, warning framing).
+- **`/profile` page** — change display name, change password (with current-password confirm), regenerate recovery token
+- **Overview** — Resource cards with type badge and labels
+- **Resource detail** with three tabs:
+  - **Monitor** — summary cards (avg CPU 1h, peak mem 24h, worst disk %), time-range selector, historical line charts for CPU/memory/disk, live ring gauges + sparklines
+  - **Alerts** — filterable alert log (active/resolved/all) with acknowledge action
+  - **Configuration** — agent config panel + alert thresholds & retention settings
+- **Global alert banner** — dismissable toast when a new alert fires on any owned resource
+- **Sidebar badges** — red pip on any resource with active alerts
 - TanStack Query for data fetching and cache management
-- Socket.IO client for live metrics via `lab:metrics` events
-- Tailwind CSS, Lucide icons, `recharts` sparklines
+- Socket.IO client presents a JWT on handshake
+- Tailwind CSS, Lucide icons, `recharts`
 
 ### `apps/lab-agent`
 
 Lightweight service that runs natively on each monitored machine:
 
-- Connects to `hub-server` via Socket.IO (automatic reconnection)
-- Registers with a `LAB_ID` (must be the UUID of an existing HomeLab)
-- Sends **heartbeats** every 15 s
-- Collects and pushes **system metrics** every 60 s using [`systeminformation`](https://www.npmjs.com/package/systeminformation):
+- Connects to `hub-server` via Socket.IO with exponential reconnect backoff (2 s → 30 s cap, ~25 % jitter)
+- Registers with a `LAB_ID` (UUID of an existing HomeLab)
+- Sends **heartbeats** every 15 s (configurable per-lab)
+- Collects and pushes **system metrics** every 60 s (configurable per-lab) using [`systeminformation`](https://www.npmjs.com/package/systeminformation):
   - CPU (model, cores, usage %, temperature)
   - Memory (RAM + swap: total, used, free, available)
   - Filesystems (per-mount: size, used, type)
   - Network interfaces (IP, MAC, operstate, speed)
   - OS info (platform, distro, hostname, arch)
   - Uptime
+- Prints a structured startup banner with `HUB_URL`, `LAB_ID`, and interval settings
 
 > **macOS / Docker note:** Docker on macOS runs inside a Linux VM. Running the agent inside Docker on macOS will report VM specs, not real host hardware. Run the agent natively for accurate metrics on macOS (and on Linux for full `/proc` access).
 
@@ -175,8 +196,11 @@ Lightweight service that runs natively on each monitored machine:
 
 Shared Zod schemas and TypeScript types for:
 
-- `User`, `HomeLab` (Resource) models, `ResourceType` enum (`HOMELAB | SERVER | PC`)
-- `LabMetrics` (CPU, memory with `activeBytes`, disks, network, OS)
+- `User`, `HomeLab` (Resource) models, `ResourceType` enum
+- `LabMetrics`, `MetricPoint`, `MetricsRangeResponse`
+- `Alert`, `AlertMetric`, `AlertThresholds`
+- `CreateUserSchema`, `PasswordPolicySchema`, `UpdateProfileSchema`, `ResetPasswordSchema`
+- `CursorPageSchema`, `PaginationQuerySchema`
 - Agent ↔ Hub Socket.IO event payloads
 - Generic API response wrappers
 
@@ -189,16 +213,33 @@ Exports both ESM and CJS via dual `exports` in `package.json`.
 ```
 User
   ├── id, email, name, password
+  ├── recoveryTokenHash? (bcrypt hash of 64-char hex recovery token)
   └── homelabs → HomeLab[]
 
 HomeLab (Resource)
   ├── id, name, description, ownerId
   ├── resourceType (HOMELAB | SERVER | PC), labels (string[])
   ├── agentHubUrl, heartbeatIntervalMs, metricsIntervalMs
-  └── owner → User
+  ├── retentionDays (default 30)
+  ├── alertThresholds? { cpuPercent, memPercent, diskPercent, consecutiveBreaches }
+  ├── owner → User
+  ├── snapshots → MetricSnapshot[]
+  └── alerts → Alert[]
+
+MetricSnapshot                        (v0.2.0)
+  ├── id, labId, recordedAt
+  ├── cpuPercent, memTotalBytes, memActiveBytes
+  ├── diskSnapshots (JSON), rawPayload (JSON)
+  └── @@index([labId, recordedAt DESC])
+
+Alert                                 (v0.2.0)
+  ├── id, labId, metric (cpu|memory|disk)
+  ├── threshold, peakValue
+  ├── firedAt, resolvedAt, acknowledgedAt
+  └── @@index([labId, firedAt DESC])
 ```
 
-Metrics are **not persisted** in v0.1.0 — broadcast in real-time via Socket.IO only. Persistence is planned for v0.2.0.
+Metrics are persisted and pruned per-lab every 6 h using the configured `retentionDays`.
 
 ---
 
@@ -207,8 +248,10 @@ Metrics are **not persisted** in v0.1.0 — broadcast in real-time via Socket.IO
 | Version | Theme | Status |
 |---|---|---|
 | v0.1.0 | Core platform: auth, resource management, live metrics, mission control UI | ✅ Released |
-| v0.2.0 | Historical metrics, time-range charts, threshold alerting, profile management | 🗂 Planned — [spec](spec/0.2.0/0.2.0.md) |
-| v0.3.0+ | Multi-user roles, sharing, TLS hardening, mobile layout, export reports | 🔮 Future |
+| v0.1.1 | macOS seamless agent launch + collapsible sidebar | ✅ Released |
+| v0.1.2 | In-app Help Center with markdown rendering | ✅ Released |
+| v0.2.0 | Historical metrics, time-range charts, threshold alerting, profile management, hardening | ✅ Released |
+| v0.3.0+ | Email/webhook alert delivery, multi-user roles, resource sharing, TLS hardening, mobile layout | 🔮 Future |
 
 ---
 

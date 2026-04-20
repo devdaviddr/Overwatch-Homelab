@@ -1,4 +1,5 @@
 import { createContext, useCallback, useState, type ReactNode } from "react";
+import { resetSocket } from "../lib/socket";
 
 const TOKEN_KEY = "overwatch_token";
 const USER_KEY = "overwatch_user";
@@ -33,6 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(USER_KEY, JSON.stringify(newUser));
     setToken(newToken);
     setUser(newUser);
+    resetSocket();
   }, []);
 
   const logout = useCallback(() => {
@@ -40,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(USER_KEY);
     setToken(null);
     setUser(null);
+    resetSocket();
   }, []);
 
   return (

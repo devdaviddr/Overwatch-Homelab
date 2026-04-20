@@ -1,22 +1,37 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Server, Database, Monitor, Loader2, Pencil, Trash2, ActivitySquare, WifiOff, Settings, BarChart2 } from "lucide-react";
+import { Server, Database, Monitor, Loader2, Pencil, Trash2, ActivitySquare, WifiOff, Settings, BarChart2, Bell } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.tsx";
 import { useHomeLab } from "../hooks/useHomeLabs.ts";
 import { useLabMetrics } from "../hooks/useLabMetrics.ts";
+import { useMetricsHistory } from "../hooks/useMetricsHistory.ts";
+import { useAlerts } from "../hooks/useAlerts.ts";
 import { EditHomeLabModal } from "../components/EditHomeLabModal.tsx";
 import { DeleteHomeLabDialog } from "../components/DeleteHomeLabDialog.tsx";
 import { AgentConfigPanel } from "../components/AgentConfigPanel.tsx";
+import { AlertSettingsPanel } from "../components/AlertSettingsPanel.tsx";
 import { MetricsDashboard } from "../components/MetricsDashboard.tsx";
+import { TimeRangeSelector, type TimeRange } from "../components/TimeRangeSelector.tsx";
+import { HistoricalCharts } from "../components/HistoricalCharts.tsx";
+import { SummaryCards } from "../components/SummaryCards.tsx";
+import { AlertLog } from "../components/AlertLog.tsx";
 import { RESOURCE_TYPE_CONFIG } from "../lib/resourceTypes.ts";
 import type { ResourceType } from "@overwatch/shared-types";
 
-type Tab = "monitor" | "configuration";
+type Tab = "monitor" | "alerts" | "configuration";
 
-const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: "monitor", label: "Monitor", icon: <BarChart2 className="h-3.5 w-3.5" /> },
-  { id: "configuration", label: "Configuration", icon: <Settings className="h-3.5 w-3.5" /> },
-];
+function alertsTabLabel(count: number): React.ReactNode {
+  return (
+    <span className="flex items-center gap-1.5">
+      Alerts
+      {count > 0 && (
+        <span className="min-w-[16px] h-4 px-1 text-[10px] rounded-full bg-red-500/20 text-red-400 border border-red-900/60 inline-flex items-center justify-center font-mono">
+          {count}
+        </span>
+      )}
+    </span>
+  );
+}
 
 function ResourceIcon({ type, className }: { type: ResourceType; className?: string }) {
   const { iconName } = RESOURCE_TYPE_CONFIG[type];
@@ -34,6 +49,17 @@ export function HomeLabPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("monitor");
+  const [timeRange, setTimeRange] = useState<TimeRange>("1h");
+
+  const historyQuery = useMetricsHistory(token, labId, timeRange);
+  const { data: activeAlerts = [] } = useAlerts(token, labId, "active");
+  const activeAlertCount = activeAlerts.filter((a) => !a.resolvedAt).length;
+
+  const TABS: { id: Tab; label: React.ReactNode; icon: React.ReactNode }[] = [
+    { id: "monitor", label: "Monitor", icon: <BarChart2 className="h-3.5 w-3.5" /> },
+    { id: "alerts", label: alertsTabLabel(activeAlertCount), icon: <Bell className="h-3.5 w-3.5" /> },
+    { id: "configuration", label: "Configuration", icon: <Settings className="h-3.5 w-3.5" /> },
+  ];
 
   if (isLoading) {
     return (
@@ -55,6 +81,8 @@ export function HomeLabPage() {
     id: string; name: string; description?: string | null;
     resourceType?: ResourceType; labels?: string[];
     agentHubUrl?: string | null; heartbeatIntervalMs: number; metricsIntervalMs: number;
+    retentionDays?: number;
+    alertThresholds?: import("@overwatch/shared-types").AlertThresholds | null;
     createdAt: string; updatedAt: string;
   };
 
@@ -141,41 +169,68 @@ export function HomeLabPage() {
       {/* ── Monitor tab ── */}
       {activeTab === "monitor" && (
         <div>
-          {metrics ? (
-            <MetricsDashboard
-              metrics={metrics}
-              lastUpdated={lastUpdated}
-              connected={connected}
-              history={history}
-            />
-          ) : (
-            <div className="bg-[#060d1a] border border-gray-800/60 rounded-xl p-10 text-center">
-              <div className="flex items-center justify-center gap-2 mb-2">
-                {connected ? (
-                  <>
-                    <ActivitySquare className="h-5 w-5 text-gray-600 animate-pulse" />
-                    <span className="text-gray-400 text-sm font-mono">
-                      Waiting for first metrics report…
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <WifiOff className="h-5 w-5 text-gray-700" />
-                    <span className="text-gray-600 text-sm font-mono">No agent connected</span>
-                  </>
-                )}
+          {labId && <SummaryCards token={token} labId={labId} liveMetrics={metrics} />}
+
+          <div className="flex items-center justify-end mb-4">
+            <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
+          </div>
+
+          <HistoricalCharts
+            data={historyQuery.data}
+            range={timeRange}
+            isLoading={historyQuery.isLoading}
+            error={historyQuery.error}
+          />
+
+          <div className="mt-6">
+            {metrics ? (
+              <MetricsDashboard
+                metrics={metrics}
+                lastUpdated={lastUpdated}
+                connected={connected}
+                history={history}
+              />
+            ) : (
+              <div className="bg-[#060d1a] border border-gray-800/60 rounded-xl p-10 text-center">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  {connected ? (
+                    <>
+                      <ActivitySquare className="h-5 w-5 text-gray-600 animate-pulse" />
+                      <span className="text-gray-400 text-sm font-mono">
+                        Waiting for first metrics report…
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <WifiOff className="h-5 w-5 text-gray-700" />
+                      <span className="text-gray-600 text-sm font-mono">No agent connected</span>
+                    </>
+                  )}
+                </div>
+                <p className="text-xs text-gray-700 font-mono mt-1">
+                  Metrics are pushed every {labData.metricsIntervalMs / 1000}s by the lab-agent.
+                </p>
               </div>
-              <p className="text-xs text-gray-700 font-mono mt-1">
-                Metrics are pushed every {labData.metricsIntervalMs / 1000}s by the lab-agent.
-              </p>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
 
+      {/* ── Alerts tab ── */}
+      {activeTab === "alerts" && labId && <AlertLog token={token} labId={labId} />}
+
       {/* ── Configuration tab ── */}
       {activeTab === "configuration" && (
-        <AgentConfigPanel lab={labData} connected={connected} />
+        <div className="space-y-4">
+          <AgentConfigPanel lab={labData} connected={connected} />
+          <AlertSettingsPanel
+            lab={{
+              id: labData.id,
+              retentionDays: labData.retentionDays,
+              alertThresholds: labData.alertThresholds ?? null,
+            }}
+          />
+        </div>
       )}
 
       {showEdit && (

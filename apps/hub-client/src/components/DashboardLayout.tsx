@@ -1,5 +1,6 @@
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar.tsx";
+import { AlertBanner } from "./AlertBanner.tsx";
 
 export function DashboardLayout() {
   return (
@@ -8,6 +9,7 @@ export function DashboardLayout() {
       <main className="flex-1 overflow-y-auto p-6">
         <Outlet />
       </main>
+      <AlertBanner />
     </div>
   );
 }

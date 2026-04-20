@@ -13,11 +13,16 @@ import {
   PlayCircle,
   Cpu,
   Network,
+  Bell,
+  Lock,
 } from "lucide-react";
+import { useActiveAlertCount } from "../hooks/useActiveAlerts.ts";
 
 const HELP_TOPICS = [
   { id: "getting-started", title: "Getting Started", icon: PlayCircle },
   { id: "agent-setup", title: "Agent Setup", icon: Cpu },
+  { id: "alerts-and-retention", title: "Alerts & Retention", icon: Bell },
+  { id: "profile-and-security", title: "Profile & Security", icon: Lock },
   { id: "architecture", title: "Architecture", icon: Network },
   { id: "faq", title: "FAQ", icon: HelpCircle },
 ];
@@ -47,6 +52,71 @@ function IconBox({ type, className, children }: { type: ResourceType; className?
       </div>
       {children}
     </div>
+  );
+}
+
+interface SidebarLab {
+  id: string;
+  name: string;
+  resourceType?: ResourceType;
+  labels?: string[];
+}
+
+function SidebarLabEntry({
+  lab,
+  collapsed,
+  token,
+}: {
+  lab: SidebarLab;
+  collapsed: boolean;
+  token: string | null;
+}) {
+  const type = (lab.resourceType as ResourceType) ?? "HOMELAB";
+  const cfg = RESOURCE_TYPE_CONFIG[type];
+  const labelsPreview = lab.labels && lab.labels.length ? lab.labels.slice(0, 2).join(", ") : "";
+  const { data: alertCount = 0 } = useActiveAlertCount(token, lab.id);
+
+  return (
+    <NavLink
+      to={`/labs/${lab.id}`}
+      className={({ isActive }) =>
+        `group relative flex items-center ${collapsed ? "justify-center" : "justify-between"} gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+          isActive ? "bg-brand-900/50 text-brand-400" : "text-gray-400 hover:text-white hover:bg-gray-800"
+        }`
+      }
+      tabIndex={0}
+    >
+      <span className={`flex items-center gap-2 min-w-0 ${collapsed ? "" : "truncate"}`}>
+        <IconBox type={type}>
+          {alertCount > 0 && (
+            <span
+              aria-label={`${alertCount} active alerts`}
+              className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 text-[10px] font-mono rounded-full bg-red-500 text-white inline-flex items-center justify-center border border-gray-900"
+              style={{ boxShadow: "0 0 5px rgba(239,68,68,0.6)" }}
+            >
+              {alertCount > 9 ? "9+" : alertCount}
+            </span>
+          )}
+        </IconBox>
+
+        {!collapsed && <span className="truncate">{lab.name}</span>}
+      </span>
+
+      {!collapsed && <ChevronRight className="h-3 w-3 shrink-0" />}
+
+      {collapsed && (
+        <div role="tooltip" className="absolute left-full ml-3 top-1/2 -translate-y-1/2 hidden group-hover:block group-focus:block z-50">
+          <div className="bg-gray-800 text-white text-sm px-3 py-2 rounded-md shadow max-w-xs">
+            <div className="font-medium">{lab.name}</div>
+            <div className="text-xs text-gray-400 mt-1">
+              {cfg.label}
+              {labelsPreview ? ` • ${labelsPreview}` : ""}
+              {alertCount > 0 ? ` • ${alertCount} alert${alertCount === 1 ? "" : "s"}` : ""}
+            </div>
+          </div>
+        </div>
+      )}
+    </NavLink>
   );
 }
 
@@ -135,43 +205,9 @@ export function Sidebar() {
             </div>
           )}
 
-          {labs?.map((lab) => {
-            const type = (lab.resourceType as ResourceType) ?? "HOMELAB";
-            const cfg = RESOURCE_TYPE_CONFIG[type];
-            const labelsPreview = lab.labels && lab.labels.length ? lab.labels.slice(0, 2).join(", ") : "";
-            return (
-              <NavLink
-                key={lab.id}
-                to={`/labs/${lab.id}`}
-                className={({ isActive }) =>
-                  `group relative flex items-center ${collapsed ? "justify-center" : "justify-between"} gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                    isActive ? "bg-brand-900/50 text-brand-400" : "text-gray-400 hover:text-white hover:bg-gray-800"
-                  }`
-                }
-                tabIndex={0}
-              >
-                <span className={`flex items-center gap-2 min-w-0 ${collapsed ? "" : "truncate"}`}>
-                  <IconBox type={type}>
-                    {/* optional status dot could be added here */}
-                  </IconBox>
-
-                  {!collapsed && <span className="truncate">{lab.name}</span>}
-                </span>
-
-                {!collapsed && <ChevronRight className="h-3 w-3 shrink-0" />}
-
-                {collapsed && (
-                  <div role="tooltip" className="absolute left-full ml-3 top-1/2 -translate-y-1/2 hidden group-hover:block group-focus:block z-50">
-                    <div className="bg-gray-800 text-white text-sm px-3 py-2 rounded-md shadow max-w-xs">
-                      <div className="font-medium">{lab.name}</div>
-                      <div className="text-xs text-gray-400 mt-1">{cfg.label}{labelsPreview ? ` • ${labelsPreview}` : ""}</div>
-                    </div>
-                  </div>
-                )}
-
-              </NavLink>
-            );
-          })}
+          {labs?.map((lab) => (
+            <SidebarLabEntry key={lab.id} lab={lab} collapsed={collapsed} token={token} />
+          ))}
 
           {!isLoading && labs?.length === 0 && (
             <p className={`px-3 py-2 text-xs text-gray-600 italic ${collapsed ? "sr-only" : ""}`}>No resources configured</p>
@@ -239,7 +275,15 @@ export function Sidebar() {
 
       {/* User footer */}
       <div className="border-t border-gray-800 px-4 py-3 flex items-center justify-between">
-        <div className="min-w-0 flex items-center gap-3">
+        <NavLink
+          to="/profile"
+          title="Profile settings"
+          className={({ isActive }) =>
+            `min-w-0 flex items-center gap-3 rounded-md -mx-1 px-1 py-1 transition-colors ${
+              isActive ? "bg-gray-800" : "hover:bg-gray-800"
+            }`
+          }
+        >
           <div className="w-8 h-8 rounded-md bg-gray-800 flex items-center justify-center">
             <svg className="h-4 w-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" />
@@ -251,7 +295,7 @@ export function Sidebar() {
             <p className="text-sm font-medium text-white truncate">{user?.name}</p>
             <p className="text-xs text-gray-500 truncate">{user?.email}</p>
           </div>
-        </div>
+        </NavLink>
 
         <button
           onClick={logout}

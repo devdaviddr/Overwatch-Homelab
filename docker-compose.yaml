@@ -31,7 +31,13 @@ services:
       PORT: "3001"
       CORS_ORIGIN: "http://localhost:5174"
       NODE_ENV: production
-      JWT_SECRET: "dev_jwt_secret"
+      # JWT_SECRET must be supplied via .env file or shell env — no default.
+      # Generate a strong secret with: openssl rand -hex 32
+      # The hub-server refuses to start (exit 1) if this is unset or shorter
+      # than 16 chars — see src/lib/env.ts. We don't use ${JWT_SECRET:?…}
+      # compose-level validation because that would also block `down`,
+      # `logs`, `ps`, etc.
+      JWT_SECRET: ${JWT_SECRET:-}
     ports:
       - "3002:3001"
     depends_on:
@@ -49,7 +55,14 @@ services:
     depends_on:
       - hub-server
 
+  # lab-agent is gated behind the "agent" compose profile. Default
+  # `docker compose up` starts only postgres + hub-server + hub-client.
+  # To run the Linux-in-Docker agent (Linux hosts only — macOS should
+  # run the agent natively for real host metrics), first create a
+  # HomeLab in the dashboard to get its UUID, set LAB_ID in .env, then:
+  #     docker compose --profile agent up -d
   lab-agent:
+    profiles: ["agent"]
     build:
       context: .
       dockerfile: ./apps/lab-agent/Dockerfile
@@ -58,7 +71,11 @@ services:
     restart: unless-stopped
     environment:
       HUB_URL: "http://hub-server:3001"
-      LAB_ID: "add71a52-ecd3-4962-8052-65b2b655516e"
+      # Empty default so non-agent `docker compose up` doesn't fail
+      # interpolation for a service it isn't even starting. The agent's
+      # own startup check (apps/lab-agent/src/index.ts) exits 1 with a
+      # clear message if LAB_ID is blank.
+      LAB_ID: ${LAB_ID:-}
     depends_on:
       - hub-server
 

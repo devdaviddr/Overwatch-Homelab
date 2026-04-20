@@ -73,3 +73,56 @@ export const LabMetricsSchema = z.object({
 });
 
 export type LabMetrics = z.infer<typeof LabMetricsSchema>;
+
+// ─────────────────────────────────────────────
+// Historical metrics (v0.2.0)
+// Response shape for GET /api/homelabs/:id/metrics — one point per
+// time bucket after server-side averaging.
+// ─────────────────────────────────────────────
+
+export const MetricPointSchema = z.object({
+  timestamp: z.string().datetime(),
+  cpuPercent: z.number().min(0).max(100),
+  memActivePercent: z.number().min(0).max(100),
+  diskUsedPercent: z.record(z.string(), z.number().min(0).max(100)),
+});
+
+export type MetricPoint = z.infer<typeof MetricPointSchema>;
+
+export const MetricsRangeResponseSchema = z.object({
+  labId: z.string().uuid(),
+  from: z.string().datetime(),
+  to: z.string().datetime(),
+  resolution: z.enum(["raw", "1m", "5m", "1h"]),
+  points: z.array(MetricPointSchema),
+});
+
+export type MetricsRangeResponse = z.infer<typeof MetricsRangeResponseSchema>;
+
+export const MetricsRangeQuerySchema = z.object({
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+  resolution: z.enum(["raw", "1m", "5m", "1h"]).optional().default("5m"),
+});
+
+export type MetricsRangeQuery = z.infer<typeof MetricsRangeQuerySchema>;
+
+// ─────────────────────────────────────────────
+// Alerts (v0.2.0)
+// ─────────────────────────────────────────────
+
+export const AlertMetricSchema = z.enum(["cpu", "memory", "disk"]);
+export type AlertMetric = z.infer<typeof AlertMetricSchema>;
+
+export const AlertSchema = z.object({
+  id: z.string().uuid(),
+  labId: z.string().uuid(),
+  metric: AlertMetricSchema,
+  threshold: z.number(),
+  peakValue: z.number(),
+  firedAt: z.string().datetime(),
+  resolvedAt: z.string().datetime().nullable(),
+  acknowledgedAt: z.string().datetime().nullable(),
+});
+
+export type Alert = z.infer<typeof AlertSchema>;

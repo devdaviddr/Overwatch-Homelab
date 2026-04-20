@@ -6,6 +6,8 @@ import type {
   AgentHeartbeatPayload,
   AgentMetricsPayload,
 } from "@overwatch/shared-types";
+import { verifyToken } from "../lib/jwt.js";
+import { prisma } from "../lib/prisma.js";
 
 export interface ConnectedAgent {
   socketId: string;
@@ -13,16 +15,70 @@ export interface ConnectedAgent {
   agentVersion: string;
   connectedAt: Date;
   lastHeartbeat: Date;
+  heartbeatIntervalMs: number;
 }
 
 const connectedAgents = new Map<string, ConnectedAgent>();
 let ioInstance: SocketServer | null = null;
+
+// Out-of-band handlers run on each agent:metrics event (historical persistence,
+// alert evaluation, etc.). They never block the live broadcast path.
+type MetricsListener = (payload: AgentMetricsPayload) => void | Promise<void>;
+const metricsListeners: MetricsListener[] = [];
+
+export function onAgentMetrics(listener: MetricsListener): () => void {
+  metricsListeners.push(listener);
+  return () => {
+    const i = metricsListeners.indexOf(listener);
+    if (i >= 0) metricsListeners.splice(i, 1);
+  };
+}
+
+// Socket kind — agents connect without a token; dashboard clients must present one.
+type SocketKind = "agent" | "dashboard";
+
+declare module "socket.io" {
+  interface SocketData {
+    kind: SocketKind;
+    userId?: string;
+  }
+}
 
 function agentOnlineForLab(labId: string): boolean {
   for (const a of connectedAgents.values()) {
     if (a.labId === labId) return true;
   }
   return false;
+}
+
+// Exported for unit testing. Given a socket's handshake auth, either populates
+// socket.data.{kind,userId} and calls next(), or calls next(err).
+//
+// Agent sockets connect with { kind: "agent" } and no token — labId is the
+// capability, per spec. Dashboard sockets must present a valid JWT.
+export function socketAuthMiddleware(
+  socket: { handshake: { auth?: { kind?: string; token?: string } }; data: { kind?: SocketKind; userId?: string } },
+  next: (err?: Error) => void
+): void {
+  const auth = socket.handshake.auth ?? {};
+  const kind: SocketKind = auth.kind === "agent" ? "agent" : "dashboard";
+  socket.data.kind = kind;
+
+  if (kind === "agent") {
+    return next();
+  }
+
+  const token = typeof auth.token === "string" ? auth.token : null;
+  if (!token) {
+    return next(new Error("UNAUTHORIZED: missing token"));
+  }
+  try {
+    const payload = verifyToken(token);
+    socket.data.userId = payload.userId;
+    next();
+  } catch {
+    next(new Error("UNAUTHORIZED: invalid or expired token"));
+  }
 }
 
 export function setupSocketServer(httpServer: HttpServer, corsOrigin: string): SocketServer {
@@ -34,14 +90,62 @@ export function setupSocketServer(httpServer: HttpServer, corsOrigin: string): S
   });
   ioInstance = io;
 
-  io.on("connection", (socket: Socket) => {
-    console.log(`[Socket] New connection: ${socket.id}`);
+  io.use(socketAuthMiddleware as unknown as Parameters<SocketServer["use"]>[0]);
 
-    socket.on(AgentEvents.REGISTER, (payload: AgentRegisterPayload) => {
+  // ── Stale-agent pruner (H7) ──────────────────────────────────────────────
+  const PRUNE_INTERVAL_MS = 60_000;
+  const STALE_MULTIPLIER = 2.5;
+  setInterval(() => {
+    const now = Date.now();
+    for (const [socketId, agent] of connectedAgents.entries()) {
+      const threshold = agent.heartbeatIntervalMs * STALE_MULTIPLIER;
+      if (now - agent.lastHeartbeat.getTime() > threshold) {
+        connectedAgents.delete(socketId);
+        console.log(`[Socket] Pruned stale agent labId=${agent.labId} (last heartbeat ${now - agent.lastHeartbeat.getTime()}ms ago)`);
+        if (!agentOnlineForLab(agent.labId)) {
+          io.to(`lab:${agent.labId}`).emit("lab:agent-status", { labId: agent.labId, connected: false });
+        }
+      }
+    }
+  }, PRUNE_INTERVAL_MS).unref();
+
+  io.on("connection", (socket: Socket) => {
+    console.log(`[Socket] New connection: ${socket.id} (kind=${socket.data.kind})`);
+
+    socket.on(AgentEvents.REGISTER, async (payload: AgentRegisterPayload) => {
+      if (socket.data.kind !== "agent") {
+        socket.emit(HubEvents.ERROR, { code: "FORBIDDEN", message: "Dashboard sockets cannot register as agents" });
+        return;
+      }
+
+      // Reject agents for labs that don't exist — otherwise every metrics
+      // push hits a FK violation in persistMetricSnapshot. Clean refusal
+      // also tells the agent to stop retrying the same bad labId.
+      let heartbeatIntervalMs = 15_000;
+      try {
+        const lab = await prisma.homeLab.findUnique({
+          where: { id: payload.labId },
+          select: { heartbeatIntervalMs: true },
+        });
+        if (!lab) {
+          console.warn(`[Socket] Rejected agent register — unknown labId=${payload.labId}`);
+          socket.emit(HubEvents.ERROR, {
+            code: "UNKNOWN_LAB",
+            message: `No resource with id=${payload.labId}. Create one in the dashboard first, then set LAB_ID to that UUID.`,
+          });
+          socket.disconnect(true);
+          return;
+        }
+        if (lab.heartbeatIntervalMs) heartbeatIntervalMs = lab.heartbeatIntervalMs;
+      } catch (err) {
+        // DB unreachable — let the agent connect; the metrics persistence
+        // path will surface the underlying issue via its own handler.
+        console.error("[Socket] lab lookup failed during register:", err);
+      }
+
       const existing = connectedAgents.get(socket.id);
       if (existing) {
         socket.leave(`lab:${existing.labId}`);
-        // Notify dashboard clients that the old lab lost its agent (if none left)
         if (!agentOnlineForLab(existing.labId)) {
           io.to(`lab:${existing.labId}`).emit("lab:agent-status", { labId: existing.labId, connected: false });
         }
@@ -56,22 +160,37 @@ export function setupSocketServer(httpServer: HttpServer, corsOrigin: string): S
         agentVersion: payload.agentVersion,
         connectedAt: existing?.connectedAt ?? new Date(),
         lastHeartbeat: new Date(),
+        heartbeatIntervalMs,
       };
 
       connectedAgents.set(socket.id, agent);
       socket.join(`lab:${payload.labId}`);
       socket.emit(HubEvents.ACK, { success: true, message: "Registered successfully" });
 
-      // Notify any dashboard clients already subscribed to this lab
       io.to(`lab:${payload.labId}`).emit("lab:agent-status", { labId: payload.labId, connected: true });
     });
 
-    socket.on("dashboard:subscribe", (payload: { labId: string }) => {
+    socket.on("dashboard:subscribe", async (payload: { labId: string }) => {
       if (!payload?.labId) return;
-      socket.join(`lab:${payload.labId}`);
-      console.log(`[Socket] Dashboard subscribed to lab:${payload.labId}`);
 
-      // Immediately tell this subscriber the current agent status for the lab
+      if (socket.data.kind !== "dashboard" || !socket.data.userId) {
+        socket.emit(HubEvents.ERROR, { code: "UNAUTHORIZED", message: "Dashboard subscription requires a JWT" });
+        return;
+      }
+
+      // Ownership check — user may only subscribe to their own labs.
+      const lab = await prisma.homeLab.findFirst({
+        where: { id: payload.labId, ownerId: socket.data.userId },
+        select: { id: true },
+      });
+      if (!lab) {
+        socket.emit(HubEvents.ERROR, { code: "FORBIDDEN", message: "Not authorized for this resource" });
+        return;
+      }
+
+      socket.join(`lab:${payload.labId}`);
+      console.log(`[Socket] Dashboard subscribed to lab:${payload.labId} (user=${socket.data.userId})`);
+
       const isOnline = agentOnlineForLab(payload.labId);
       socket.emit("lab:agent-status", { labId: payload.labId, connected: isOnline });
     });
@@ -87,6 +206,12 @@ export function setupSocketServer(httpServer: HttpServer, corsOrigin: string): S
     socket.on(AgentEvents.METRICS, (payload: AgentMetricsPayload) => {
       console.log(`[Socket] Metrics received from labId=${payload.labId}`);
       io.to(`lab:${payload.labId}`).emit("lab:metrics", payload);
+      for (const h of metricsListeners) {
+        // Persistence + alert evaluation run out-of-band (never blocks broadcast).
+        Promise.resolve()
+          .then(() => h(payload))
+          .catch((err) => console.error("[Socket] metrics listener error:", err));
+      }
     });
 
     socket.on("disconnect", () => {
@@ -94,7 +219,6 @@ export function setupSocketServer(httpServer: HttpServer, corsOrigin: string): S
       if (agent) {
         console.log(`[Socket] Agent disconnected: labId=${agent.labId}`);
         connectedAgents.delete(socket.id);
-        // Notify dashboard if no other agent is still serving this lab
         if (!agentOnlineForLab(agent.labId)) {
           io.to(`lab:${agent.labId}`).emit("lab:agent-status", { labId: agent.labId, connected: false });
         }
@@ -123,7 +247,6 @@ export function reassignAgent(socketId: string, newLabId: string): boolean {
   socket.emit(HubEvents.REASSIGN, { newLabId });
   console.log(`[Socket] Agent ${socketId} reassigned to labId=${newLabId}`);
 
-  // Update status for both labs
   if (!agentOnlineForLab(oldLabId)) {
     ioInstance.to(`lab:${oldLabId}`).emit("lab:agent-status", { labId: oldLabId, connected: false });
   }
