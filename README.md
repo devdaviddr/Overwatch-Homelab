@@ -34,12 +34,11 @@ overwatch-homelab/
 
 ## Running with Docker Compose (recommended)
 
-v0.2.0 requires `JWT_SECRET` to be supplied via env — hub-server refuses to start without it.
+v0.2.0 requires `JWT_SECRET`. Copy the template once — `docker-compose` auto-loads `.env` from the repo root:
 
 ```bash
-# Generate a strong secret:
-export JWT_SECRET=$(openssl rand -hex 32)
-
+cp .env.example .env
+# Edit .env — replace the placeholder with: openssl rand -hex 32
 docker compose up --build
 ```
 
@@ -49,11 +48,9 @@ docker compose up --build
 | API | http://localhost:3002 |
 | Database | localhost:5432 |
 
-Default login: `admin@example.com` / `AdminPass123!`
+Open the dashboard and use the **Sign up** tab to create your first account. You'll be shown a one-time recovery token — save it in your password manager; it's what lets you reset the password if you forget it.
 
-> **Note:** The `lab-agent` service in docker-compose is provided for Linux hosts only.
-> On macOS, Docker runs inside a Linux VM — the agent will report VM specs, not your real hardware.
-> See [Running the agent natively](#running-the-agent-natively) below.
+> **Note:** The `lab-agent` service is gated behind the `agent` compose profile — default `docker compose up` only starts postgres + hub-server + hub-client. On macOS, run the agent natively (see below). On Linux, opt in with `docker compose --profile agent up -d` after setting `LAB_ID` in `.env`.
 
 ---
 
@@ -133,11 +130,11 @@ Dashboard: http://localhost:5173 | API: http://localhost:3001
 ## Testing
 
 ```bash
-npm run test --workspace=apps/hub-server     # 38 Vitest unit/middleware tests (< 300 ms)
+npm run test --workspace=apps/hub-server     # 47 Vitest unit/middleware tests (~1.1 s)
 npm run typecheck                            # cascades across all workspaces; rebuilds shared-types first
 ```
 
-Coverage in v0.2.0: cursor pagination, time-bucket downsampling, password policy, env validator, alert evaluator, retention pruner, socket auth middleware. Client + lab-agent tests are deferred to v0.3.0.
+Coverage in v0.2.0: cursor pagination, time-bucket downsampling, password policy, env validator, alert evaluator, retention pruner, socket auth middleware, recovery tokens, reset-password schema. Client + lab-agent tests are deferred to v0.3.0.
 
 ---
 
@@ -147,11 +144,12 @@ Coverage in v0.2.0: cursor pagination, time-bucket downsampling, password policy
 
 Express API with:
 
-- **JWT authentication** (`POST /api/auth/register`, `POST /api/auth/login`, `PATCH /api/auth/profile`)
+- **JWT authentication** — `POST /api/auth/register` (returns one-time `recoveryToken`), `POST /api/auth/login`, `PATCH /api/auth/profile`
+- **Password reset (no email)** — `POST /api/auth/reset-password` takes `{ email, recoveryToken, newPassword }`, rotates the token on success; `POST /api/auth/recovery-token` regenerates the token from an authenticated session
 - **Resource CRUD** (`/api/homelabs`) — create, list (cursor-paginated), get, update, delete
 - **Historical metrics** — `GET /api/homelabs/:id/metrics` with `from`/`to`/`resolution` query params and server-side time-bucket averaging
 - **Alerts** — `GET /api/homelabs/:id/alerts`, `POST /api/homelabs/:id/alerts/:alertId/acknowledge`
-- **Socket.IO** — JWT-authenticated dashboard handshake; ownership-checked `dashboard:subscribe`; `lab:alert` / `lab:alert-resolved` broadcasts; stale-agent pruner (60 s)
+- **Socket.IO** — JWT-authenticated dashboard handshake; ownership-checked `dashboard:subscribe`; `agent:register` validates labId exists (rejects unknown labs with `hub:error UNKNOWN_LAB`); `lab:alert` / `lab:alert-resolved` broadcasts; stale-agent pruner (60 s)
 - **Background jobs** — retention pruner (6 h) deletes snapshots older than each lab's `retentionDays`
 - **Startup env validation** — fails fast with a diagnostic list if `DATABASE_URL`, `JWT_SECRET`, or `CORS_ORIGIN` are missing or malformed
 
@@ -159,7 +157,8 @@ Express API with:
 
 React dashboard with:
 
-- Login page + `/profile` page (name + password change)
+- **Auth page** — Sign in / Sign up / Reset password tabs. Signup and reset each show the one-time recovery token in a dedicated modal (copy-once, warning framing).
+- **`/profile` page** — change display name, change password (with current-password confirm), regenerate recovery token
 - **Overview** — Resource cards with type badge and labels
 - **Resource detail** with three tabs:
   - **Monitor** — summary cards (avg CPU 1h, peak mem 24h, worst disk %), time-range selector, historical line charts for CPU/memory/disk, live ring gauges + sparklines
@@ -200,7 +199,7 @@ Shared Zod schemas and TypeScript types for:
 - `User`, `HomeLab` (Resource) models, `ResourceType` enum
 - `LabMetrics`, `MetricPoint`, `MetricsRangeResponse`
 - `Alert`, `AlertMetric`, `AlertThresholds`
-- `CreateUserSchema`, `PasswordPolicySchema`, `UpdateProfileSchema`
+- `CreateUserSchema`, `PasswordPolicySchema`, `UpdateProfileSchema`, `ResetPasswordSchema`
 - `CursorPageSchema`, `PaginationQuerySchema`
 - Agent ↔ Hub Socket.IO event payloads
 - Generic API response wrappers
@@ -214,6 +213,7 @@ Exports both ESM and CJS via dual `exports` in `package.json`.
 ```
 User
   ├── id, email, name, password
+  ├── recoveryTokenHash? (bcrypt hash of 64-char hex recovery token)
   └── homelabs → HomeLab[]
 
 HomeLab (Resource)

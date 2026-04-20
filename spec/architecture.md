@@ -157,7 +157,7 @@ Configuration is entirely via environment variables: `HUB_URL`, `LAB_ID`, `HEART
 
 A pure TypeScript package depending only on `zod`. Exports Zod schemas and inferred types for all domain models, API contracts, Socket.IO event payloads, and metrics shapes. Used by `hub-server`, `hub-client`, and `lab-agent` for end-to-end type safety.
 
-v0.2.0 additions: `AlertSchema`, `AlertThresholdsSchema`, `MetricPointSchema`, `MetricsRangeResponseSchema`, `MetricsRangeQuerySchema`, `UpdateProfileSchema`, `PasswordPolicySchema`, `CursorPageSchema`, `PaginationQuerySchema`.
+v0.2.0 additions: `AlertSchema`, `AlertThresholdsSchema`, `MetricPointSchema`, `MetricsRangeResponseSchema`, `MetricsRangeQuerySchema`, `UpdateProfileSchema`, `PasswordPolicySchema`, `ResetPasswordSchema`, `CursorPageSchema`, `PaginationQuerySchema`.
 
 Exports ESM (`import`) and CJS (`require`) via dual `exports` in `package.json`.
 
@@ -173,13 +173,14 @@ Schema managed by Prisma (`prisma db push` for dev, generate for production).
 
 ```
 User
-  id          UUID  PK
-  email       String  UNIQUE
-  name        String
-  password    String  (bcrypt hash)
-  createdAt   DateTime
-  updatedAt   DateTime
-  homelabs    HomeLab[]
+  id                 UUID  PK
+  email              String  UNIQUE
+  name               String
+  password           String   (bcrypt hash)
+  recoveryTokenHash  String?  (bcrypt hash of 64-char hex recovery token; null before first signup/reset)
+  createdAt          DateTime
+  updatedAt          DateTime
+  homelabs           HomeLab[]
 
 HomeLab  (referred to as "Resource" in the UI)
   id                   UUID  PK
@@ -233,12 +234,14 @@ v0.2.0 makes metrics persistent. The live Socket.IO broadcast path is unchanged 
 
 Three infrastructure services run in a shared default bridge network. Images are built from source using workspace-aware multi-stage Dockerfiles (build context is the repo root so `packages/` is available during the build).
 
-| Service | Image | Host Port | Notes |
-|---|---|---|---|
-| postgres | postgres:16-alpine | 5432 | |
-| hub-server | overwatch/hub-server:local | 3002 | `JWT_SECRET` must come from env — no default |
-| hub-client | overwatch/hub-client:local | 5174 | nginx reverse proxy |
-| lab-agent | overwatch/lab-agent:local | — | Linux hosts only |
+| Service | Image | Host Port | Profile | Notes |
+|---|---|---|---|---|
+| postgres | postgres:16-alpine | 5432 | default | |
+| hub-server | overwatch/hub-server:local | 3002 | default | `JWT_SECRET` required via `${repo}/.env` or shell env |
+| hub-client | overwatch/hub-client:local | 5174 | default | nginx reverse proxy |
+| lab-agent | overwatch/lab-agent:local | — | `agent` | opt-in — `docker compose --profile agent up -d`. Linux hosts only; macOS should run the agent natively |
+
+**Env file loading:** `docker-compose` auto-loads `${repo_root}/.env`. That file is gitignored (`.gitignore:17`); a template lives in `.env.example` with placeholders for `JWT_SECRET` (generate via `openssl rand -hex 32`) and optional `LAB_ID`. The compose interpolation uses `${JWT_SECRET:-}` and `${LAB_ID:-}` (soft defaults) so non-destructive commands (`down`, `logs`, `ps`, `config`) work without requiring the env vars to be set — the hub-server's own startup validator is the authoritative check.
 
 **Build notes:**
 - All Dockerfiles use `node:20-slim` as the base. OpenSSL is installed in both builder and runner stages to satisfy Prisma's query engine requirements.
@@ -253,12 +256,29 @@ Three infrastructure services run in a shared default bridge network. Images are
 ### Authentication
 
 ```
+Browser → POST /api/auth/register
+          { email, name, password }
+        ← { token, user, recoveryToken }          ← shown once in UI
 Browser → POST /api/auth/login
+          { email, password }
         ← { token, user }
-Browser stores token in localStorage via AuthContext
+Browser → POST /api/auth/reset-password           ← public, no JWT
+          { email, recoveryToken, newPassword }
+        ← { token, user, recoveryToken }          ← new rotated token
+Browser → POST /api/auth/recovery-token           ← authed — rotate from profile
+        ← { recoveryToken }
+Browser → PATCH /api/auth/profile                 ← authed
+          { name?, currentPassword?, newPassword? }
+        ← { id, email, name }
+
+Browser stores token in localStorage via AuthContext. login() / logout()
+call resetSocket() so the Socket.IO handshake picks up the new JWT on
+next connect.
 All subsequent REST requests include Authorization: Bearer <token>
 Socket.IO handshake sends { kind: "dashboard", token: <jwt> }
 ```
+
+`recoveryToken` is a 64-char hex string (32 bytes of entropy) generated with `crypto.randomBytes`. Bcrypt-hashed (cost 12) in `User.recoveryTokenHash`; plaintext is returned to the user **once** per signup / reset / regenerate and never stored. `POST /auth/reset-password` rotates the token on success, so each token is single-use. Unknown-user paths run a dummy bcrypt to keep response timing similar.
 
 ### Resource management (cursor-paginated)
 
@@ -346,7 +366,7 @@ Both use `setInterval(...).unref()` so the hub-server process can exit cleanly f
 
 ## Testing
 
-Vitest runs in `apps/hub-server` with 38 tests across 7 files in < 300 ms:
+Vitest runs in `apps/hub-server` with 47 tests across 9 files in ~1.1 s:
 
 - **Pagination** — cursor encode/decode round-trip + malformed input
 - **Downsampling** — raw pass-through, 5m bucket averaging, per-mount disk averaging, boundary alignment
@@ -355,6 +375,8 @@ Vitest runs in `apps/hub-server` with 38 tests across 7 files in < 300 ms:
 - **Alert evaluator** — no-thresholds short-circuit, fire on N breaches, no-fire when samples < N, peakValue updates, resolve on first non-breach
 - **Retention pruner** — per-lab cutoff, 1000-row batching, partial-batch termination
 - **Socket auth middleware** — agents pass without token; dashboard missing / invalid / expired / valid token paths
+- **Recovery tokens** — 64-char hex generation + uniqueness, hash round-trip, wrong-token rejection
+- **Reset schema** — `ResetPasswordSchema` hex/length/policy edge cases
 
 Client and lab-agent have no automated tests in v0.2.0 — deferred to v0.3.0 per spec.
 
@@ -362,21 +384,34 @@ Client and lab-agent have no automated tests in v0.2.0 — deferred to v0.3.0 pe
 
 ## Local Development
 
-**With Docker Compose (hub infrastructure + Linux agent):**
+**With Docker Compose (hub stack only):**
 ```bash
-# Generate a JWT secret first — docker-compose requires it in the env:
-export JWT_SECRET=$(openssl rand -hex 32)
+# First time only — create the root .env file:
+cp .env.example .env
+# Edit .env and set JWT_SECRET to `openssl rand -hex 32`.
+
 docker compose up --build
 # Dashboard: http://localhost:5174
 # API:       http://localhost:3002
 # DB:        localhost:5432
 ```
 
-**Native agent (required on macOS):**
+The default profile starts only postgres + hub-server + hub-client. The lab-agent is opt-in behind the `agent` compose profile (Linux hosts only) — see below.
+
+**Native agent (required on macOS, recommended elsewhere):**
 ```bash
-cd apps/lab-agent
-# edit .env: set LAB_ID and HUB_URL=http://localhost:3002
-npm run build && node dist/index.js
+# After creating a HomeLab in the dashboard and copying its UUID:
+LAB_ID=<uuid> HUB_URL=http://localhost:3002 \
+  HEARTBEAT_INTERVAL_MS=15000 METRICS_INTERVAL_MS=60000 \
+  npx tsx apps/lab-agent/src/index.ts
+```
+
+The Configuration tab's .ENV FILE box pre-fills this command with the lab's UUID — copy/paste directly.
+
+**Docker agent (Linux only):**
+```bash
+# Put LAB_ID=<uuid> in .env alongside JWT_SECRET, then:
+docker compose --profile agent up -d
 ```
 
 **Full native stack (no Docker):**
@@ -393,10 +428,13 @@ cd apps/hub-server && npx prisma db push && npm run dev
 
 ## Security Considerations (current state)
 
-- Passwords hashed with bcrypt (cost factor 12); policy enforced in Zod schema (min 12 + letter + digit)
-- JWT secret **required** at startup — no dev fallback, no default in docker-compose
-- Rate limiting on auth (20/15 min) and API (120/min) endpoints
-- All REST API resources owner-scoped; no cross-user data leakage
-- Socket.IO dashboard sockets authenticated with JWT on handshake; `dashboard:subscribe` checks `HomeLab.ownerId === socket.userId`
-- Agent-to-hub socket remains `labId`-only authenticated. Agent-side JWT is a v0.3.0 concern — see the Help Center security entry for the trade-off.
-- `docker-compose.yaml` contains hardcoded dev credentials for Postgres — **do not use in production**. The `JWT_SECRET` reference uses `${JWT_SECRET:?...}` so compose refuses to start without the env var set.
+- Passwords hashed with bcrypt (cost factor 12); policy enforced in Zod schema (min 12 + letter + digit) on register, profile password change, and reset-password.
+- **Recovery tokens** are 32 random bytes (64-char hex), bcrypt-hashed at cost 12, shown once, rotated on every reset and on manual regenerate. Plaintext never stored.
+- `POST /auth/reset-password` is intentionally public (no JWT) but runs a dummy bcrypt on missing-user paths to reduce timing side-channels.
+- JWT secret **required** at startup — no dev fallback, no default in docker-compose. The hub-server exits with a clear diagnostic if `JWT_SECRET` is missing or < 16 chars.
+- Rate limiting on auth (20/15 min) and API (120/min) endpoints — applies equally to login, register, reset-password, and recovery-token regenerate.
+- All REST API resources owner-scoped; no cross-user data leakage (verified by manual QA).
+- Socket.IO dashboard sockets authenticated with JWT on handshake; `dashboard:subscribe` checks `HomeLab.ownerId === socket.userId`. Unknown/foreign labs are rejected with `hub:error FORBIDDEN`.
+- `agent:register` now also validates that the labId exists; unknown labs are rejected with `hub:error UNKNOWN_LAB` and the socket is disconnected (prevents log spam from stale-config agents and avoids FK-violation traffic).
+- Agent-to-hub socket remains `labId`-only authenticated. Agent-side JWT is a v0.3.0 concern — see the Help Center "Profile & Security" entry for the trade-off.
+- `docker-compose.yaml` contains hardcoded dev credentials for Postgres — **do not use in production**. `JWT_SECRET` and `LAB_ID` use soft defaults (`${VAR:-}`) so lifecycle commands (`down`/`logs`/`ps`) never block on missing env; the hub-server's own env validator is the authoritative check at startup.
