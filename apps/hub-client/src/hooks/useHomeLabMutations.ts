@@ -4,7 +4,19 @@ import type { HomeLab, ResourceType } from "@overwatch/shared-types";
 
 export function useCreateHomeLab(token: string | null) {
   const queryClient = useQueryClient();
-  return useMutation<HomeLab, Error, { name: string; description?: string; resourceType?: ResourceType; labels?: string[] }>({
+  return useMutation<
+    HomeLab,
+    Error,
+    {
+      name: string;
+      description?: string;
+      resourceType?: ResourceType;
+      labels?: string[];
+      agentHubUrl?: string | null;
+      heartbeatIntervalMs?: number;
+      metricsIntervalMs?: number;
+    }
+  >({
     mutationFn: async (body) => {
       const res = await apiFetch<HomeLab>("/api/homelabs", {
         method: "POST",

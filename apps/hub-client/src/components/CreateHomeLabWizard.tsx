@@ -10,7 +10,7 @@ interface Props {
   onCreated: (labId: string) => void;
 }
 
-const STEPS = ["Basic Info", "Type & Labels", "Review"] as const;
+const STEPS = ["Basic Info", "Type & Labels", "Agent Configuration", "Review"] as const;
 
 const TYPE_OPTIONS: ResourceType[] = ["HOMELAB", "SERVER", "PC"];
 
@@ -78,6 +78,13 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
   const [description, setDescription] = useState("");
   const [resourceType, setResourceType] = useState<ResourceType>("HOMELAB");
   const [labels, setLabels] = useState<string[]>([]);
+
+  // Agent configuration fields (new in v0.1.1)
+  const [agentHubUrl, setAgentHubUrl] = useState<string>("http://localhost:3002");
+  const [heartbeatIntervalMs, setHeartbeatIntervalMs] = useState<number>(15000);
+  const [metricsIntervalMs, setMetricsIntervalMs] = useState<number>(60000);
+  const [runInDocker, setRunInDocker] = useState<boolean>(false);
+
   const [error, setError] = useState<string | null>(null);
 
   function canAdvance() {
@@ -91,11 +98,14 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
   async function handleCreate() {
     setError(null);
     try {
-      const lab = await createLab.mutateAsync({
+        const lab = await createLab.mutateAsync({
         name: name.trim(),
         description: description.trim() || undefined,
         resourceType,
         labels,
+        agentHubUrl: agentHubUrl || undefined,
+        heartbeatIntervalMs,
+        metricsIntervalMs,
       });
       onCreated(lab.id);
     } catch (err) {
@@ -205,8 +215,81 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
             </div>
           )}
 
-          {/* Step 2: Review */}
+          {/* Step 2: Agent Configuration */}
           {step === 2 && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Hub URL</label>
+                  <input
+                    type="url"
+                    value={agentHubUrl}
+                    onChange={(e) => setAgentHubUrl(e.target.value)}
+                    placeholder="http://localhost:3002"
+                    className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Heartbeat interval (ms)</label>
+                    <input
+                      type="number"
+                      min={1000}
+                      value={heartbeatIntervalMs}
+                      onChange={(e) => setHeartbeatIntervalMs(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Metrics interval (ms)</label>
+                    <input
+                      type="number"
+                      min={5000}
+                      value={metricsIntervalMs}
+                      onChange={(e) => setMetricsIntervalMs(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    id="runInDocker"
+                    type="checkbox"
+                    checked={runInDocker}
+                    onChange={(e) => setRunInDocker(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <label htmlFor="runInDocker" className="text-sm text-gray-300">Run in Docker (Linux only)</label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">.env preview</label>
+                <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 font-mono text-sm text-green-300 whitespace-pre-wrap">
+{`LAB_ID=<LAB_ID>\nHUB_URL=${agentHubUrl}\nHEARTBEAT_INTERVAL_MS=${heartbeatIntervalMs}\nMETRICS_INTERVAL_MS=${metricsIntervalMs}`}
+                </div>
+                <div className="mt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigator.clipboard &&
+                      navigator.clipboard.writeText(`LAB_ID=<LAB_ID>\nHUB_URL=${agentHubUrl}\nHEARTBEAT_INTERVAL_MS=${heartbeatIntervalMs}\nMETRICS_INTERVAL_MS=${metricsIntervalMs}`)
+                    }
+                    className="px-3 py-1.5 bg-gray-800 border border-gray-700 text-sm rounded-md text-white hover:bg-gray-700"
+                  >
+                    Copy .env
+                  </button>
+                </div>
+              </div>
+
+              {error && <p className="text-red-400 text-sm">{error}</p>}
+            </div>
+          )}
+
+          {/* Step 3: Review */}
+          {step === 3 && (
             <div className="space-y-4">
               <div className={`${cfg.bgColor} border ${cfg.borderColor} rounded-xl p-4 space-y-2`}>
                 <div className={`flex items-center gap-2 font-semibold ${cfg.color}`}>
@@ -226,6 +309,19 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
                     ))}
                   </div>
                 )}
+
+                <div className="ml-6 mt-2 text-sm text-gray-300 space-y-1">
+                  <div>
+                    <span className="text-gray-400">Hub URL:</span> <span className="text-white">{agentHubUrl}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">Heartbeat:</span> <span className="text-white">{heartbeatIntervalMs} ms</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">Metrics interval:</span> <span className="text-white">{metricsIntervalMs} ms</span>
+                  </div>
+                </div>
+
               </div>
               <p className="text-xs text-gray-500">
                 After creating, you'll be taken to the configuration page to connect a lab-agent.
