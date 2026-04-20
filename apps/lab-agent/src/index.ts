@@ -16,12 +16,28 @@ if (!currentLabId) {
   process.exit(1);
 }
 
-console.log(`[Agent] Connecting to hub at ${HUB_URL} as labId=${currentLabId}`);
+// ── Startup banner (H4) ─────────────────────────────────────────────────────
+console.log("╔═ Overwatch Lab-Agent ═════════════════════════════════════");
+console.log(`║ version              ${AGENT_VERSION}`);
+console.log(`║ HUB_URL              ${HUB_URL}`);
+console.log(`║ LAB_ID               ${currentLabId}`);
+console.log(`║ HEARTBEAT_INTERVAL_MS ${HEARTBEAT_INTERVAL_MS}`);
+console.log(`║ METRICS_INTERVAL_MS  ${METRICS_INTERVAL_MS}`);
+console.log("╚═══════════════════════════════════════════════════════════");
 
+// ── Exponential reconnect backoff (H4) ──────────────────────────────────────
+// min(30_000, 2_000 * 2^n) + rand(0..500) jitter.
+// socket.io-client does not directly expose a custom backoff function, so we
+// drive it via reconnectionDelay / reconnectionDelayMax + randomizationFactor,
+// which together produce an exponential curve with jitter bounded by the cap.
 const socket = io(HUB_URL, {
   reconnection: true,
-  reconnectionDelay: 5000,
+  reconnectionDelay: 2_000,
+  reconnectionDelayMax: 30_000,
+  randomizationFactor: 0.25, // ~ ±25% jitter around each delay
   reconnectionAttempts: Infinity,
+  // H3: agent sockets announce themselves as agents; no token required.
+  auth: { kind: "agent" },
 });
 
 socket.on("connect", () => {
