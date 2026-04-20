@@ -34,6 +34,7 @@ export async function collectMetrics(labId: string): Promise<LabMetrics> {
   const memory: MemoryMetrics = {
     totalBytes: mem.total,
     usedBytes: mem.used,
+    activeBytes: mem.active,
     freeBytes: mem.free,
     availableBytes: mem.available,
     swapTotalBytes: mem.swaptotal,

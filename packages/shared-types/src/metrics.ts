@@ -19,7 +19,8 @@ export type CpuMetrics = z.infer<typeof CpuMetricsSchema>;
 
 export const MemoryMetricsSchema = z.object({
   totalBytes: z.number().int().nonnegative(),
-  usedBytes: z.number().int().nonnegative(),
+  usedBytes: z.number().int().nonnegative(),    // total - free (includes cached/inactive on macOS)
+  activeBytes: z.number().int().nonnegative(),  // pages actively in use by processes
   freeBytes: z.number().int().nonnegative(),
   availableBytes: z.number().int().nonnegative(), // free + reclaimable cache
   swapTotalBytes: z.number().int().nonnegative(),

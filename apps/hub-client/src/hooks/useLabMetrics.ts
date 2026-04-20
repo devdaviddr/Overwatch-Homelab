@@ -43,7 +43,7 @@ export function useLabMetrics(labId: string | undefined): LabMetricsState {
       setLastUpdated(new Date());
       const memPct =
         payload.memory.totalBytes > 0
-          ? Math.round((payload.memory.usedBytes / payload.memory.totalBytes) * 100)
+          ? Math.round((payload.memory.activeBytes / payload.memory.totalBytes) * 100)
           : 0;
       setHistory((prev) => [
         ...prev.slice(-(MAX_HISTORY - 1)),

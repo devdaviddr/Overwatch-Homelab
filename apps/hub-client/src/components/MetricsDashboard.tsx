@@ -176,7 +176,7 @@ function UsageBar({ pct, label, sub }: { pct: number; label: string; sub?: strin
 
 export function MetricsDashboard({ metrics, lastUpdated, connected, history }: Props) {
   const { cpu, memory, disks, network, os } = metrics;
-  const memPct = memory.totalBytes > 0 ? (memory.usedBytes / memory.totalBytes) * 100 : 0;
+  const memPct = memory.totalBytes > 0 ? (memory.activeBytes / memory.totalBytes) * 100 : 0;
   const swapPct = memory.swapTotalBytes > 0 ? (memory.swapUsedBytes / memory.swapTotalBytes) * 100 : 0;
   const cpuColors = metricColor(cpu.usagePercent);
   const memColors = metricColor(memPct);
@@ -262,11 +262,12 @@ export function MetricsDashboard({ metrics, lastUpdated, connected, history }: P
             <CircularGauge pct={memPct} />
             <div className="flex-1 min-w-0">
               <p className="text-sm text-gray-200 font-sans font-medium">
-                {formatBytes(memory.usedBytes)}
-                <span className="text-gray-600 font-normal"> used</span>
+                {formatBytes(memory.activeBytes)}
+                <span className="text-gray-600 font-normal"> active</span>
               </p>
               <p className="text-[11px] text-gray-500 mt-1">
                 {formatBytes(memory.availableBytes)} available
+                <span className="text-gray-600"> · {formatBytes(memory.totalBytes)} total</span>
               </p>
               {memory.swapTotalBytes > 0 && (
                 <p className="text-[10px] text-gray-600 mt-1">
