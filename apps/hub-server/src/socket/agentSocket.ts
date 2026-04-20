@@ -51,6 +51,36 @@ function agentOnlineForLab(labId: string): boolean {
   return false;
 }
 
+// Exported for unit testing. Given a socket's handshake auth, either populates
+// socket.data.{kind,userId} and calls next(), or calls next(err).
+//
+// Agent sockets connect with { kind: "agent" } and no token — labId is the
+// capability, per spec. Dashboard sockets must present a valid JWT.
+export function socketAuthMiddleware(
+  socket: { handshake: { auth?: { kind?: string; token?: string } }; data: { kind?: SocketKind; userId?: string } },
+  next: (err?: Error) => void
+): void {
+  const auth = socket.handshake.auth ?? {};
+  const kind: SocketKind = auth.kind === "agent" ? "agent" : "dashboard";
+  socket.data.kind = kind;
+
+  if (kind === "agent") {
+    return next();
+  }
+
+  const token = typeof auth.token === "string" ? auth.token : null;
+  if (!token) {
+    return next(new Error("UNAUTHORIZED: missing token"));
+  }
+  try {
+    const payload = verifyToken(token);
+    socket.data.userId = payload.userId;
+    next();
+  } catch {
+    next(new Error("UNAUTHORIZED: invalid or expired token"));
+  }
+}
+
 export function setupSocketServer(httpServer: HttpServer, corsOrigin: string): SocketServer {
   const io = new SocketServer(httpServer, {
     cors: {
@@ -60,30 +90,7 @@ export function setupSocketServer(httpServer: HttpServer, corsOrigin: string): S
   });
   ioInstance = io;
 
-  // ── Auth middleware (H3) ─────────────────────────────────────────────────
-  // Agent sockets connect with { kind: "agent" } and no token (labId is the
-  // capability, per spec). Dashboard sockets must present a valid JWT.
-  io.use((socket, next) => {
-    const auth = socket.handshake.auth ?? {};
-    const kind: SocketKind = auth.kind === "agent" ? "agent" : "dashboard";
-    socket.data.kind = kind;
-
-    if (kind === "agent") {
-      return next();
-    }
-
-    const token = typeof auth.token === "string" ? auth.token : null;
-    if (!token) {
-      return next(new Error("UNAUTHORIZED: missing token"));
-    }
-    try {
-      const payload = verifyToken(token);
-      socket.data.userId = payload.userId;
-      next();
-    } catch {
-      next(new Error("UNAUTHORIZED: invalid or expired token"));
-    }
-  });
+  io.use(socketAuthMiddleware as unknown as Parameters<SocketServer["use"]>[0]);
 
   // ── Stale-agent pruner (H7) ──────────────────────────────────────────────
   const PRUNE_INTERVAL_MS = 60_000;

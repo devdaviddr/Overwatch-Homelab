@@ -138,7 +138,7 @@ export async function evaluateAlerts(m: LabMetrics, io?: SocketServer): Promise<
 const PRUNER_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const BATCH_SIZE = 1000;
 
-async function pruneOnce(): Promise<void> {
+export async function pruneOnce(): Promise<void> {
   const labs = await prisma.homeLab.findMany({ select: { id: true, retentionDays: true } });
   for (const lab of labs) {
     const cutoff = new Date(Date.now() - lab.retentionDays * 24 * 60 * 60 * 1000);
