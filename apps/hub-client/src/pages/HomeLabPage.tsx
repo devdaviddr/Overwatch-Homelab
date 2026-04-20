@@ -8,6 +8,7 @@ import { EditHomeLabModal } from "../components/EditHomeLabModal.tsx";
 import { DeleteHomeLabDialog } from "../components/DeleteHomeLabDialog.tsx";
 import { AgentConfigPanel } from "../components/AgentConfigPanel.tsx";
 import { MetricsDashboard } from "../components/MetricsDashboard.tsx";
+import { TimeRangeSelector, type TimeRange } from "../components/TimeRangeSelector.tsx";
 import { RESOURCE_TYPE_CONFIG } from "../lib/resourceTypes.ts";
 import type { ResourceType } from "@overwatch/shared-types";
 
@@ -34,6 +35,7 @@ export function HomeLabPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("monitor");
+  const [timeRange, setTimeRange] = useState<TimeRange>("1h");
 
   if (isLoading) {
     return (
@@ -141,6 +143,9 @@ export function HomeLabPage() {
       {/* ── Monitor tab ── */}
       {activeTab === "monitor" && (
         <div>
+          <div className="flex items-center justify-end mb-4">
+            <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
+          </div>
           {metrics ? (
             <MetricsDashboard
               metrics={metrics}
