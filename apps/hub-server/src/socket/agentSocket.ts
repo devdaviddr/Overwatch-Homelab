@@ -118,13 +118,29 @@ export function setupSocketServer(httpServer: HttpServer, corsOrigin: string): S
         return;
       }
 
-      // Look up the lab's configured heartbeat interval for the pruner.
+      // Reject agents for labs that don't exist — otherwise every metrics
+      // push hits a FK violation in persistMetricSnapshot. Clean refusal
+      // also tells the agent to stop retrying the same bad labId.
       let heartbeatIntervalMs = 15_000;
       try {
-        const lab = await prisma.homeLab.findUnique({ where: { id: payload.labId }, select: { heartbeatIntervalMs: true } });
-        if (lab?.heartbeatIntervalMs) heartbeatIntervalMs = lab.heartbeatIntervalMs;
-      } catch {
-        // Non-fatal — use default interval.
+        const lab = await prisma.homeLab.findUnique({
+          where: { id: payload.labId },
+          select: { heartbeatIntervalMs: true },
+        });
+        if (!lab) {
+          console.warn(`[Socket] Rejected agent register — unknown labId=${payload.labId}`);
+          socket.emit(HubEvents.ERROR, {
+            code: "UNKNOWN_LAB",
+            message: `No resource with id=${payload.labId}. Create one in the dashboard first, then set LAB_ID to that UUID.`,
+          });
+          socket.disconnect(true);
+          return;
+        }
+        if (lab.heartbeatIntervalMs) heartbeatIntervalMs = lab.heartbeatIntervalMs;
+      } catch (err) {
+        // DB unreachable — let the agent connect; the metrics persistence
+        // path will surface the underlying issue via its own handler.
+        console.error("[Socket] lab lookup failed during register:", err);
       }
 
       const existing = connectedAgents.get(socket.id);

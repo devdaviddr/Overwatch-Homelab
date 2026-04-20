@@ -55,7 +55,14 @@ onAgentMetrics(async (payload) => {
   try {
     await persistMetricSnapshot(payload);
   } catch (err) {
-    console.error("[Metrics] snapshot persist failed:", err);
+    // P2003 = FK violation. Happens when an agent pushes for a lab that
+    // was deleted out from under it (or — pre-H3-register-guard — a lab
+    // that never existed). Log a one-liner; stack trace isn't useful.
+    if ((err as { code?: string } | null)?.code === "P2003") {
+      console.warn(`[Metrics] snapshot persist skipped — unknown labId=${payload.labId}`);
+    } else {
+      console.error("[Metrics] snapshot persist failed:", err);
+    }
     return;
   }
   try {

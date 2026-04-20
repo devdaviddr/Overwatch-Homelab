@@ -55,7 +55,14 @@ services:
     depends_on:
       - hub-server
 
+  # lab-agent is gated behind the "agent" compose profile. Default
+  # `docker compose up` starts only postgres + hub-server + hub-client.
+  # To run the Linux-in-Docker agent (Linux hosts only — macOS should
+  # run the agent natively for real host metrics), first create a
+  # HomeLab in the dashboard to get its UUID, set LAB_ID in .env, then:
+  #     docker compose --profile agent up -d
   lab-agent:
+    profiles: ["agent"]
     build:
       context: .
       dockerfile: ./apps/lab-agent/Dockerfile
@@ -64,7 +71,11 @@ services:
     restart: unless-stopped
     environment:
       HUB_URL: "http://hub-server:3001"
-      LAB_ID: "add71a52-ecd3-4962-8052-65b2b655516e"
+      # Empty default so non-agent `docker compose up` doesn't fail
+      # interpolation for a service it isn't even starting. The agent's
+      # own startup check (apps/lab-agent/src/index.ts) exits 1 with a
+      # clear message if LAB_ID is blank.
+      LAB_ID: ${LAB_ID:-}
     depends_on:
       - hub-server
 
