@@ -5,6 +5,7 @@ import { DashboardLayout } from "./components/DashboardLayout.tsx";
 import { OverviewPage } from "./pages/OverviewPage.tsx";
 import { HomeLabPage } from "./pages/HomeLabPage.tsx";
 import { HelpPage } from "./pages/HelpPage.tsx";
+import { ProfilePage } from "./pages/ProfilePage.tsx";
 
 export default function App() {
   const { isAuthenticated } = useAuth();
@@ -19,6 +20,7 @@ export default function App() {
         <Route index element={<Navigate to="/overview" replace />} />
         <Route path="overview" element={<OverviewPage />} />
         <Route path="labs/:labId" element={<HomeLabPage />} />
+        <Route path="profile" element={<ProfilePage />} />
         <Route path="help" element={<Navigate to="/help/getting-started" replace />} />
         <Route path="help/:topicId" element={<HelpPage />} />
       </Route>
