@@ -2,7 +2,8 @@ import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../lib/prisma.js";
 import { signToken } from "../lib/jwt.js";
-import { CreateUserSchema, LoginSchema } from "@overwatch/shared-types";
+import { authenticate } from "../middleware/auth.js";
+import { CreateUserSchema, LoginSchema, UpdateProfileSchema } from "@overwatch/shared-types";
 
 export const authRouter = Router();
 
@@ -79,4 +80,50 @@ authRouter.post("/login", async (req: Request, res: Response): Promise<void> => 
       user: { id: user.id, email: user.email, name: user.name },
     },
   });
+});
+
+// PATCH /auth/profile — update name and/or password. Requires auth.
+// Password changes require currentPassword and the new password must meet
+// the v0.2.0 policy (H6).
+authRouter.patch("/profile", authenticate, async (req: Request, res: Response): Promise<void> => {
+  const parsed = UpdateProfileSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      success: false,
+      error: { code: "VALIDATION_ERROR", message: "Invalid input", details: parsed.error.flatten() },
+    });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
+  if (!user) {
+    res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "User not found" } });
+    return;
+  }
+
+  const updates: { name?: string; password?: string } = {};
+
+  if (parsed.data.name !== undefined) {
+    updates.name = parsed.data.name;
+  }
+
+  if (parsed.data.newPassword !== undefined) {
+    const ok = await bcrypt.compare(parsed.data.currentPassword!, user.password);
+    if (!ok) {
+      res.status(401).json({
+        success: false,
+        error: { code: "INVALID_CREDENTIALS", message: "Current password is incorrect" },
+      });
+      return;
+    }
+    updates.password = await bcrypt.hash(parsed.data.newPassword, 12);
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: updates,
+    select: { id: true, email: true, name: true },
+  });
+
+  res.json({ success: true, data: updated });
 });
