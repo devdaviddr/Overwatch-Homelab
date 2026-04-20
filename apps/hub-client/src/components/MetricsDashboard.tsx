@@ -122,7 +122,7 @@ function Sparkline({
             fontSize: 11,
             color: "#94a3b8",
           }}
-          formatter={(v: number) => [`${v}%`, dataKey.toUpperCase()]}
+          formatter={(value) => [`${typeof value === "number" ? value : 0}%`, dataKey.toUpperCase()]}
           labelFormatter={() => ""}
         />
         <Area
