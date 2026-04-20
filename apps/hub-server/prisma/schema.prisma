@@ -10,6 +10,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum ResourceType {
+  HOMELAB
+  SERVER
+  PC
+}
+
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
@@ -24,15 +30,17 @@ model User {
 }
 
 model HomeLab {
-  id                  String   @id @default(uuid())
+  id                  String       @id @default(uuid())
   name                String
   description         String?
+  resourceType        ResourceType @default(HOMELAB)
+  labels              String[]     @default([])
   ownerId             String
   agentHubUrl         String?
-  heartbeatIntervalMs Int      @default(15000)
-  metricsIntervalMs   Int      @default(60000)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  heartbeatIntervalMs Int          @default(15000)
+  metricsIntervalMs   Int          @default(60000)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 
   owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 

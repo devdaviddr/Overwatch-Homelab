@@ -75,7 +75,7 @@ Key libraries: `express`, `express-rate-limit`, `socket.io`, `@prisma/client`, `
 
 A React 18 SPA built with Vite and served as static files via nginx. In production (Docker), nginx also acts as a reverse proxy, forwarding `/api/*` and `/socket.io/*` to `hub-server:3001` on the internal Docker network. This avoids exposing `hub-server` directly to the browser and resolves the Docker internal hostname issue.
 
-Key libraries: `react`, `react-router-dom` v6, `@tanstack/react-query` v5, `socket.io-client`, `tailwindcss`, `lucide-react`
+Key libraries: `react`, `react-router-dom` v6, `@tanstack/react-query` v5, `socket.io-client`, `tailwindcss`, `lucide-react`, `recharts`
 
 **State management:**
 - Server state: TanStack Query (queries + mutations, 30s stale time)
@@ -87,9 +87,16 @@ Key libraries: `react`, `react-router-dom` v6, `@tanstack/react-query` v5, `sock
 
 **Routing:**
 - `/` → redirects to `/overview`
-- `/overview` → HomeLab list + create wizard
-- `/labs/:labId` → HomeLab detail: agent config panel, live metrics dashboard, edit/delete
+- `/overview` → Resource list with type badges, labels, and "New Resource" create wizard
+- `/labs/:labId` → Resource detail: **Monitor** tab (mission control dashboard) and **Configuration** tab (agent config, edit/delete)
 - Unauthenticated users see `LoginPage`; all protected routes are gated by `isAuthenticated` in `App.tsx`
+
+**Dashboard UI (mission control):**
+- SVG circular ring gauges for CPU and memory — color-coded cyan → amber (>70%) → red (>90%) with glow
+- `recharts` AreaChart sparklines showing 30-point rolling history for CPU and memory
+- Monospace status bar showing live status dot, hostname, OS, arch, and uptime
+- Disk and network sections as card grids
+- `useLabMetrics` hook accumulates up to 30 readings in a history buffer; memory % uses `activeBytes / totalBytes` (macOS accurate)
 
 **API client:** `apiFetch` — a thin wrapper around `fetch` that injects the Bearer token, serializes the body, and handles both JSON and `204 No Content` responses.
 
@@ -119,7 +126,7 @@ Metrics are collected via the [`systeminformation`](https://www.npmjs.com/packag
 | `si.cpu()` | manufacturer, brand, cores, physicalCores, base clock speed |
 | `si.currentLoad()` | real-time CPU usage percentage |
 | `si.cpuTemperature()` | CPU temperature (null on unsupported platforms, e.g. macOS) |
-| `si.mem()` | total, used, free, available, swap used/total |
+| `si.mem()` | total, used, free, available, active (macOS accurate), swap used/total |
 | `si.fsSize()` | per-filesystem size, used, available, mount point, type |
 | `si.networkInterfaces()` | external interfaces: IP, MAC, operstate, link speed |
 | `si.osInfo()` | platform, distro, release, arch, hostname |
@@ -155,16 +162,20 @@ User
   updatedAt   DateTime
   homelabs    HomeLab[]
 
-HomeLab
+HomeLab  (referred to as "Resource" in the UI)
   id                   UUID  PK
   name                 String
   description          String?
+  resourceType         ResourceType  default HOMELAB
+  labels               String[]      default []
   ownerId              UUID  FK → User (CASCADE DELETE)
   agentHubUrl          String?    (custom hub URL for the agent; null = use default)
   heartbeatIntervalMs  Int        default 15000
   metricsIntervalMs    Int        default 60000
   createdAt            DateTime
   updatedAt            DateTime
+
+enum ResourceType { HOMELAB | SERVER | PC }
 ```
 
 Disk, memory, and network metrics are **not persisted**. They are broadcast in real-time via Socket.IO and held only in browser memory until the next agent push or page refresh.
@@ -201,14 +212,14 @@ Browser stores token in localStorage via AuthContext
 All subsequent requests include Authorization: Bearer <token>
 ```
 
-### HomeLab management
+### Resource management
 
 ```
-Browser → GET    /api/homelabs          list user's labs
-Browser → POST   /api/homelabs          create lab
-Browser → GET    /api/homelabs/:id      get lab detail
-Browser → PATCH  /api/homelabs/:id      update name / description / agent config
-Browser → DELETE /api/homelabs/:id      delete lab
+Browser → GET    /api/homelabs          list user's resources
+Browser → POST   /api/homelabs          create resource (name, description, resourceType, labels)
+Browser → GET    /api/homelabs/:id      get resource detail
+Browser → PATCH  /api/homelabs/:id      update name / description / resourceType / labels / agent config
+Browser → DELETE /api/homelabs/:id      delete resource
 ```
 
 All routes are authenticated. Resources are always scoped to `req.user.userId`.

@@ -1,14 +1,73 @@
-import { useState } from "react";
-import { X, Server, ChevronRight, ChevronLeft, Check, Loader2 } from "lucide-react";
+import { useState, KeyboardEvent } from "react";
+import { X, Server, Database, Monitor, ChevronRight, ChevronLeft, Check, Loader2, Tag } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.tsx";
 import { useCreateHomeLab } from "../hooks/useHomeLabMutations.ts";
+import { RESOURCE_TYPE_CONFIG } from "../lib/resourceTypes.ts";
+import type { ResourceType } from "@overwatch/shared-types";
 
 interface Props {
   onClose: () => void;
   onCreated: (labId: string) => void;
 }
 
-const STEPS = ["Basic Info", "Review"] as const;
+const STEPS = ["Basic Info", "Type & Labels", "Review"] as const;
+
+const TYPE_OPTIONS: ResourceType[] = ["HOMELAB", "SERVER", "PC"];
+
+function ResourceTypeIcon({ type, className }: { type: ResourceType; className?: string }) {
+  const { iconName } = RESOURCE_TYPE_CONFIG[type];
+  if (iconName === "database") return <Database className={className} />;
+  if (iconName === "monitor") return <Monitor className={className} />;
+  return <Server className={className} />;
+}
+
+function TagInput({ tags, onChange }: { tags: string[]; onChange: (t: string[]) => void }) {
+  const [input, setInput] = useState("");
+
+  function addTag(raw: string) {
+    const tag = raw.trim().replace(/,+$/, "").trim();
+    if (tag && !tags.includes(tag)) onChange([...tags, tag]);
+    setInput("");
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      addTag(input);
+    } else if (e.key === "Backspace" && input === "" && tags.length > 0) {
+      onChange(tags.slice(0, -1));
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1.5 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg min-h-[40px] focus-within:ring-2 focus-within:ring-brand-500">
+      {tags.map((t) => (
+        <span
+          key={t}
+          className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-brand-900/50 text-brand-300 border border-brand-700/60 rounded"
+        >
+          {t}
+          <button
+            type="button"
+            onClick={() => onChange(tags.filter((x) => x !== t))}
+            className="text-brand-500 hover:text-white ml-0.5"
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      <input
+        type="text"
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={onKeyDown}
+        onBlur={() => { if (input.trim()) addTag(input); }}
+        placeholder={tags.length === 0 ? "Add label… (Enter or comma to add)" : ""}
+        className="flex-1 min-w-[120px] bg-transparent text-white text-xs placeholder-gray-600 focus:outline-none"
+      />
+    </div>
+  );
+}
 
 export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
   const { token } = useAuth();
@@ -17,10 +76,13 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [resourceType, setResourceType] = useState<ResourceType>("HOMELAB");
+  const [labels, setLabels] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   function canAdvance() {
-    return step === 0 ? name.trim().length > 0 : true;
+    if (step === 0) return name.trim().length > 0;
+    return true;
   }
 
   function next() { setError(null); setStep((s) => s + 1); }
@@ -32,6 +94,8 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
       const lab = await createLab.mutateAsync({
         name: name.trim(),
         description: description.trim() || undefined,
+        resourceType,
+        labels,
       });
       onCreated(lab.id);
     } catch (err) {
@@ -39,13 +103,15 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
     }
   }
 
+  const cfg = RESOURCE_TYPE_CONFIG[resourceType];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="w-full max-w-lg bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
           <div>
-            <h2 className="text-lg font-bold text-white">New HomeLab</h2>
+            <h2 className="text-lg font-bold text-white">New Resource</h2>
             <p className="text-xs text-gray-500 mt-0.5">
               Step {step + 1} of {STEPS.length} — {STEPS[step]}
             </p>
@@ -68,18 +134,20 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
         </div>
 
         {/* Body */}
-        <div className="px-6 py-5 flex-1 min-h-[180px]">
+        <div className="px-6 py-5 flex-1 min-h-[220px]">
+          {/* Step 0: Basic info */}
           {step === 0 && (
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">
-                  Lab Name <span className="text-red-400">*</span>
+                  Name <span className="text-red-400">*</span>
                 </label>
                 <input
                   autoFocus
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && canAdvance() && next()}
                   placeholder="e.g. Home Server Rack"
                   className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
@@ -92,26 +160,75 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
                   rows={3}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Describe what this homelab is for…"
+                  placeholder="What is this resource for?"
                   className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
                 />
               </div>
             </div>
           )}
 
+          {/* Step 1: Type + labels */}
           {step === 1 && (
-            <div className="space-y-4">
-              <div className="bg-gray-800/60 border border-gray-700 rounded-xl p-4 space-y-2">
-                <div className="flex items-center gap-2 text-white font-semibold">
-                  <Server className="h-4 w-4 text-brand-400" />
-                  {name}
+            <div className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Resource Type</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {TYPE_OPTIONS.map((type) => {
+                    const c = RESOURCE_TYPE_CONFIG[type];
+                    const selected = resourceType === type;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setResourceType(type)}
+                        className={`flex flex-col items-center gap-2 p-3 rounded-xl border text-center transition-all ${
+                          selected
+                            ? `${c.bgColor} ${c.borderColor} ${c.color}`
+                            : "bg-gray-800/40 border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-300"
+                        }`}
+                      >
+                        <ResourceTypeIcon type={type} className={`h-5 w-5 ${selected ? c.color : ""}`} />
+                        <span className="text-xs font-medium">{c.label}</span>
+                        <span className="text-[10px] leading-tight opacity-70">{c.description}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-                {description && (
-                  <p className="text-sm text-gray-400 ml-6">{description}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1 flex items-center gap-1.5">
+                  <Tag className="h-3.5 w-3.5 text-gray-500" />
+                  Labels <span className="text-gray-600 text-xs">(optional)</span>
+                </label>
+                <TagInput tags={labels} onChange={setLabels} />
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Review */}
+          {step === 2 && (
+            <div className="space-y-4">
+              <div className={`${cfg.bgColor} border ${cfg.borderColor} rounded-xl p-4 space-y-2`}>
+                <div className={`flex items-center gap-2 font-semibold ${cfg.color}`}>
+                  <ResourceTypeIcon type={resourceType} className="h-4 w-4" />
+                  <span className="text-white">{name}</span>
+                  <span className={`text-xs font-normal px-1.5 py-0.5 rounded ${cfg.bgColor} ${cfg.color}`}>
+                    {cfg.label}
+                  </span>
+                </div>
+                {description && <p className="text-sm text-gray-400 ml-6">{description}</p>}
+                {labels.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 ml-6">
+                    {labels.map((l) => (
+                      <span key={l} className="text-xs px-2 py-0.5 bg-gray-800 text-gray-400 border border-gray-700 rounded">
+                        {l}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
               <p className="text-xs text-gray-500">
-                After creating the homelab, you'll be taken to its configuration page where you can set up and connect the lab-agent.
+                After creating, you'll be taken to the configuration page to connect a lab-agent.
               </p>
               {error && <p className="text-red-400 text-sm">{error}</p>}
             </div>
@@ -145,7 +262,7 @@ export function CreateHomeLabWizard({ onClose, onCreated }: Props) {
               className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors"
             >
               {createLab.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              {createLab.isPending ? "Creating…" : "Create HomeLab"}
+              {createLab.isPending ? "Creating…" : "Create Resource"}
             </button>
           )}
         </div>

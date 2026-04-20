@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Server, Loader2, Pencil, Trash2, ActivitySquare, WifiOff, Settings, BarChart2 } from "lucide-react";
+import { Server, Database, Monitor, Loader2, Pencil, Trash2, ActivitySquare, WifiOff, Settings, BarChart2 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.tsx";
 import { useHomeLab } from "../hooks/useHomeLabs.ts";
 import { useLabMetrics } from "../hooks/useLabMetrics.ts";
@@ -8,6 +8,8 @@ import { EditHomeLabModal } from "../components/EditHomeLabModal.tsx";
 import { DeleteHomeLabDialog } from "../components/DeleteHomeLabDialog.tsx";
 import { AgentConfigPanel } from "../components/AgentConfigPanel.tsx";
 import { MetricsDashboard } from "../components/MetricsDashboard.tsx";
+import { RESOURCE_TYPE_CONFIG } from "../lib/resourceTypes.ts";
+import type { ResourceType } from "@overwatch/shared-types";
 
 type Tab = "monitor" | "configuration";
 
@@ -15,6 +17,13 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "monitor", label: "Monitor", icon: <BarChart2 className="h-3.5 w-3.5" /> },
   { id: "configuration", label: "Configuration", icon: <Settings className="h-3.5 w-3.5" /> },
 ];
+
+function ResourceIcon({ type, className }: { type: ResourceType; className?: string }) {
+  const { iconName } = RESOURCE_TYPE_CONFIG[type];
+  if (iconName === "database") return <Database className={className} />;
+  if (iconName === "monitor") return <Monitor className={className} />;
+  return <Server className={className} />;
+}
 
 export function HomeLabPage() {
   const { labId } = useParams<{ labId: string }>();
@@ -44,21 +53,28 @@ export function HomeLabPage() {
 
   const labData = lab as unknown as {
     id: string; name: string; description?: string | null;
+    resourceType?: ResourceType; labels?: string[];
     agentHubUrl?: string | null; heartbeatIntervalMs: number; metricsIntervalMs: number;
     createdAt: string; updatedAt: string;
   };
+
+  const type: ResourceType = labData.resourceType ?? "HOMELAB";
+  const cfg = RESOURCE_TYPE_CONFIG[type];
 
   return (
     <div>
       {/* ── Header ── */}
       <div className="flex items-start justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-[#060d1a] border border-gray-800 rounded-lg">
-            <Server className="h-5 w-5 text-cyan-500" />
+          <div className={`p-2 ${cfg.bgColor} border ${cfg.borderColor} rounded-lg`}>
+            <ResourceIcon type={type} className={`h-5 w-5 ${cfg.color}`} />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-bold text-white">{labData.name}</h1>
+              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${cfg.bgColor} ${cfg.color} ${cfg.borderColor}`}>
+                {cfg.label}
+              </span>
               <span
                 className={`inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded border ${
                   connected
@@ -75,6 +91,15 @@ export function HomeLabPage() {
             </div>
             {labData.description && (
               <p className="text-sm text-gray-500 mt-0.5">{labData.description}</p>
+            )}
+            {Array.isArray(labData.labels) && labData.labels.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {labData.labels.map((l: string) => (
+                  <span key={l} className="text-[10px] px-2 py-0.5 bg-gray-800 text-gray-400 border border-gray-700 rounded">
+                    {l}
+                  </span>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -157,7 +182,7 @@ export function HomeLabPage() {
 
       {showEdit && (
         <EditHomeLabModal
-          lab={lab}
+          lab={{ ...labData, description: labData.description ?? null }}
           onClose={() => setShowEdit(false)}
           onSaved={() => setShowEdit(false)}
         />

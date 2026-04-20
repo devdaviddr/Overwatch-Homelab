@@ -7,6 +7,8 @@ import { z } from "zod";
 const UpdateHomeLabSchema = z.object({
   name: z.string().min(1).optional(),
   description: z.string().optional().nullable(),
+  resourceType: z.enum(["HOMELAB", "SERVER", "PC"]).optional(),
+  labels: z.array(z.string()).optional(),
   agentHubUrl: z.string().url().optional().nullable(),
   heartbeatIntervalMs: z.number().int().min(1000).optional(),
   metricsIntervalMs: z.number().int().min(5000).optional(),

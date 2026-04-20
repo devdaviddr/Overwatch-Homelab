@@ -3,12 +3,23 @@ import {
   Shield,
   LayoutDashboard,
   Server,
+  Database,
+  Monitor,
   LogOut,
   ChevronRight,
   Loader2,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.tsx";
 import { useHomeLabs } from "../hooks/useHomeLabs.ts";
+import { RESOURCE_TYPE_CONFIG } from "../lib/resourceTypes.ts";
+import type { ResourceType } from "@overwatch/shared-types";
+
+function ResourceIcon({ type, className }: { type: ResourceType; className?: string }) {
+  const { iconName } = RESOURCE_TYPE_CONFIG[type];
+  if (iconName === "database") return <Database className={className} />;
+  if (iconName === "monitor") return <Monitor className={className} />;
+  return <Server className={className} />;
+}
 
 export function Sidebar() {
   const { token, user, logout } = useAuth();
@@ -38,10 +49,10 @@ export function Sidebar() {
           Overview
         </NavLink>
 
-        {/* Homelabs section */}
+        {/* Resources section */}
         <div className="mt-4">
           <p className="px-3 mb-1 text-xs font-semibold uppercase tracking-wider text-gray-600">
-            Homelabs
+            Resources
           </p>
 
           {isLoading && (
@@ -50,28 +61,32 @@ export function Sidebar() {
             </div>
           )}
 
-          {labs?.map((lab) => (
-            <NavLink
-              key={lab.id}
-              to={`/labs/${lab.id}`}
-              className={({ isActive }) =>
-                `flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  isActive
-                    ? "bg-brand-900/50 text-brand-400"
-                    : "text-gray-400 hover:text-white hover:bg-gray-800"
-                }`
-              }
-            >
-              <span className="flex items-center gap-2">
-                <Server className="h-4 w-4" />
-                <span className="truncate">{lab.name}</span>
-              </span>
-              <ChevronRight className="h-3 w-3 shrink-0" />
-            </NavLink>
-          ))}
+          {labs?.map((lab) => {
+            const type = (lab.resourceType as ResourceType) ?? "HOMELAB";
+            const cfg = RESOURCE_TYPE_CONFIG[type];
+            return (
+              <NavLink
+                key={lab.id}
+                to={`/labs/${lab.id}`}
+                className={({ isActive }) =>
+                  `flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+                    isActive
+                      ? "bg-brand-900/50 text-brand-400"
+                      : "text-gray-400 hover:text-white hover:bg-gray-800"
+                  }`
+                }
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <ResourceIcon type={type} className={`h-4 w-4 shrink-0 ${cfg.color}`} />
+                  <span className="truncate">{lab.name}</span>
+                </span>
+                <ChevronRight className="h-3 w-3 shrink-0" />
+              </NavLink>
+            );
+          })}
 
           {!isLoading && labs?.length === 0 && (
-            <p className="px-3 py-2 text-xs text-gray-600 italic">No labs configured</p>
+            <p className="px-3 py-2 text-xs text-gray-600 italic">No resources configured</p>
           )}
         </div>
       </nav>

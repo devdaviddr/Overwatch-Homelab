@@ -1,10 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../lib/api.ts";
-import type { HomeLab } from "@overwatch/shared-types";
+import type { HomeLab, ResourceType } from "@overwatch/shared-types";
 
 export function useCreateHomeLab(token: string | null) {
   const queryClient = useQueryClient();
-  return useMutation<HomeLab, Error, { name: string; description?: string }>({
+  return useMutation<HomeLab, Error, { name: string; description?: string; resourceType?: ResourceType; labels?: string[] }>({
     mutationFn: async (body) => {
       const res = await apiFetch<HomeLab>("/api/homelabs", {
         method: "POST",
@@ -28,6 +28,8 @@ export function useUpdateHomeLab(token: string | null) {
       id: string;
       name?: string;
       description?: string | null;
+      resourceType?: ResourceType;
+      labels?: string[];
       agentHubUrl?: string | null;
       heartbeatIntervalMs?: number;
       metricsIntervalMs?: number;
