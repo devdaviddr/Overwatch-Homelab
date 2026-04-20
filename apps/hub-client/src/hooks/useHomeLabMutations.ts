@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../lib/api.ts";
-import type { HomeLab, ResourceType } from "@overwatch/shared-types";
+import type { HomeLab, ResourceType, AlertThresholds } from "@overwatch/shared-types";
 
 export function useCreateHomeLab(token: string | null) {
   const queryClient = useQueryClient();
@@ -45,6 +45,8 @@ export function useUpdateHomeLab(token: string | null) {
       agentHubUrl?: string | null;
       heartbeatIntervalMs?: number;
       metricsIntervalMs?: number;
+      retentionDays?: number;
+      alertThresholds?: AlertThresholds | null;
     }
   >({
     mutationFn: async ({ id, ...body }) => {

@@ -9,6 +9,7 @@ import { useAlerts } from "../hooks/useAlerts.ts";
 import { EditHomeLabModal } from "../components/EditHomeLabModal.tsx";
 import { DeleteHomeLabDialog } from "../components/DeleteHomeLabDialog.tsx";
 import { AgentConfigPanel } from "../components/AgentConfigPanel.tsx";
+import { AlertSettingsPanel } from "../components/AlertSettingsPanel.tsx";
 import { MetricsDashboard } from "../components/MetricsDashboard.tsx";
 import { TimeRangeSelector, type TimeRange } from "../components/TimeRangeSelector.tsx";
 import { HistoricalCharts } from "../components/HistoricalCharts.tsx";
@@ -80,6 +81,8 @@ export function HomeLabPage() {
     id: string; name: string; description?: string | null;
     resourceType?: ResourceType; labels?: string[];
     agentHubUrl?: string | null; heartbeatIntervalMs: number; metricsIntervalMs: number;
+    retentionDays?: number;
+    alertThresholds?: import("@overwatch/shared-types").AlertThresholds | null;
     createdAt: string; updatedAt: string;
   };
 
@@ -218,7 +221,16 @@ export function HomeLabPage() {
 
       {/* ── Configuration tab ── */}
       {activeTab === "configuration" && (
-        <AgentConfigPanel lab={labData} connected={connected} />
+        <div className="space-y-4">
+          <AgentConfigPanel lab={labData} connected={connected} />
+          <AlertSettingsPanel
+            lab={{
+              id: labData.id,
+              retentionDays: labData.retentionDays,
+              alertThresholds: labData.alertThresholds ?? null,
+            }}
+          />
+        </div>
       )}
 
       {showEdit && (
