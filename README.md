@@ -1,6 +1,9 @@
 # Overwatch Homelab
 
-A multi-tenant homelab monitoring platform that collects real system metrics from registered machines and displays them live in a browser dashboard. Built as a TypeScript monorepo using npm workspaces.
+A multi-tenant resource monitoring platform that collects real system metrics from registered machines and displays them live in a mission-control-style browser dashboard. Built as a TypeScript monorepo using npm workspaces.
+
+**Current release:** v0.1.0 · [Spec](spec/0.1.0/0.1.0.md) · [Architecture](spec/architecture.md)  
+**Next release:** v0.2.0 — historical metrics, time-range charts, alerting · [Spec](spec/0.2.0/0.2.0.md)
 
 ## Monorepo Structure
 
@@ -12,6 +15,10 @@ overwatch-homelab/
 │   └── lab-agent/           # Lightweight agent that runs on each monitored machine
 ├── packages/
 │   └── shared-types/        # Shared Zod schemas & TypeScript interfaces
+├── spec/
+│   ├── architecture.md      # Living architecture document
+│   ├── 0.1.0/               # v0.1.0 spec (current)
+│   └── 0.2.0/               # v0.2.0 spec (planned)
 ├── docker-compose.yaml      # Full local stack (postgres, hub-server, hub-client)
 ├── tsconfig.base.json       # Shared TypeScript config
 └── package.json             # npm workspaces root
@@ -51,9 +58,9 @@ Default login: `admin@example.com` / `AdminPass123!`
 
 To monitor **real host hardware** (required on macOS, recommended everywhere), run the agent as a native Node.js process directly on the machine you want to monitor.
 
-### 1. Create your HomeLab in the dashboard
+### 1. Create your Resource in the dashboard
 
-Log in, click **New HomeLab**, fill in the name and create it. You'll be taken to the HomeLab detail page.
+Log in, click **New Resource**, complete the 3-step wizard (name, type, labels) and create it. You'll be taken to the Resource detail page.
 
 ### 2. Copy the LAB_ID
 
@@ -126,7 +133,7 @@ Dashboard: http://localhost:5173 | API: http://localhost:3001
 Express API with:
 
 - **JWT authentication** (`POST /api/auth/register`, `POST /api/auth/login`)
-- **HomeLab CRUD** (`/api/homelabs`) — create, list, get, update (including agent config), delete
+- **Resource CRUD** (`/api/homelabs`) — create (with type + labels), list, get, update, delete
 - **Socket.IO** server for real-time agent connections and live metrics broadcasting
 
 ### `apps/hub-client`
@@ -134,12 +141,14 @@ Express API with:
 React dashboard with:
 
 - Login page with JWT auth
-- Overview page with HomeLab cards (click to open detail)
-- HomeLab detail page: agent config panel, live metrics dashboard, edit/delete
-- Create HomeLab wizard (name + description)
+- **Overview** page — Resource cards with type badge (Homelab / Server / PC), labels, and description
+- **Resource detail** page — two tabs:
+  - **Monitor**: mission control dashboard (circular CPU/memory gauges, 30-point sparklines, disk grid, network grid, status bar)
+  - **Configuration**: agent config panel, edit resource (name, description, type, labels), delete
+- **3-step create wizard**: Basic Info → Type & Labels → Review
 - TanStack Query for data fetching and cache management
 - Socket.IO client for live metrics via `lab:metrics` events
-- Tailwind CSS + Lucide icons
+- Tailwind CSS, Lucide icons, `recharts` sparklines
 
 ### `apps/lab-agent`
 
@@ -166,8 +175,8 @@ Lightweight service that runs natively on each monitored machine:
 
 Shared Zod schemas and TypeScript types for:
 
-- `User`, `HomeLab` models
-- `LabMetrics` (CPU, memory, disks, network, OS)
+- `User`, `HomeLab` (Resource) models, `ResourceType` enum (`HOMELAB | SERVER | PC`)
+- `LabMetrics` (CPU, memory with `activeBytes`, disks, network, OS)
 - Agent ↔ Hub Socket.IO event payloads
 - Generic API response wrappers
 
@@ -182,11 +191,24 @@ User
   ├── id, email, name, password
   └── homelabs → HomeLab[]
 
-HomeLab
+HomeLab (Resource)
   ├── id, name, description, ownerId
+  ├── resourceType (HOMELAB | SERVER | PC), labels (string[])
   ├── agentHubUrl, heartbeatIntervalMs, metricsIntervalMs
   └── owner → User
 ```
+
+Metrics are **not persisted** in v0.1.0 — broadcast in real-time via Socket.IO only. Persistence is planned for v0.2.0.
+
+---
+
+## Roadmap
+
+| Version | Theme | Status |
+|---|---|---|
+| v0.1.0 | Core platform: auth, resource management, live metrics, mission control UI | ✅ Released |
+| v0.2.0 | Historical metrics, time-range charts, threshold alerting, profile management | 🗂 Planned — [spec](spec/0.2.0/0.2.0.md) |
+| v0.3.0+ | Multi-user roles, sharing, TLS hardening, mobile layout, export reports | 🔮 Future |
 
 ---
 
