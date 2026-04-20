@@ -53,6 +53,21 @@ export const LoginSchema = z.object({
 
 export type LoginInput = z.infer<typeof LoginSchema>;
 
+// v0.2.0 — password reset via recovery token (no email verification).
+// Recovery tokens are 64-char hex strings issued at signup and rotated
+// on every reset. Shown once to the user; stored bcrypt-hashed on the
+// server (like a password).
+export const ResetPasswordSchema = z.object({
+  email: z.string().email(),
+  recoveryToken: z
+    .string()
+    .length(64, { message: "Recovery token must be 64 hex characters" })
+    .regex(/^[a-f0-9]+$/i, { message: "Recovery token must be hex" }),
+  newPassword: PasswordPolicySchema,
+});
+
+export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>;
+
 // ─────────────────────────────────────────────
 // Resource
 // ─────────────────────────────────────────────

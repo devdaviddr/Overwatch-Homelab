@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { User as UserIcon, KeyRound, Loader2, Check } from "lucide-react";
+import { User as UserIcon, KeyRound, Loader2, Check, ShieldAlert, RefreshCcw } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.tsx";
 import { apiFetch } from "../lib/api.ts";
+import { RecoveryTokenModal } from "../components/RecoveryTokenModal.tsx";
 
 interface UpdatedUser {
   id: string;
@@ -21,6 +22,26 @@ export function ProfilePage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [pwStatus, setPwStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [pwError, setPwError] = useState<string | null>(null);
+
+  const [rtStatus, setRtStatus] = useState<"idle" | "working">("idle");
+  const [rtError, setRtError] = useState<string | null>(null);
+  const [shownToken, setShownToken] = useState<string | null>(null);
+
+  async function regenerateRecovery() {
+    setRtStatus("working");
+    setRtError(null);
+    try {
+      const res = await apiFetch<{ recoveryToken: string }>("/api/auth/recovery-token", {
+        token,
+        method: "POST",
+      });
+      setShownToken(res.data.recoveryToken);
+    } catch (err) {
+      setRtError(err instanceof Error ? err.message : "Failed to regenerate token");
+    } finally {
+      setRtStatus("idle");
+    }
+  }
 
   async function saveName(e: React.FormEvent) {
     e.preventDefault();
@@ -177,6 +198,36 @@ export function ProfilePage() {
           </div>
         </form>
       </div>
+
+      <div className="bg-[#060d1a] border border-gray-800/60 rounded-xl p-5 mt-4">
+        <div className="flex items-center gap-2 mb-3">
+          <ShieldAlert className="h-4 w-4 text-gray-500" />
+          <span className="text-[10px] font-mono tracking-[0.18em] uppercase text-gray-500">Recovery token</span>
+        </div>
+        <p className="text-sm text-gray-300 mb-3">
+          If you lose your password, you can use your recovery token to reset it — no email required.
+        </p>
+        <p className="text-[11px] text-gray-600 font-mono mb-4">
+          We only store a hash, so we can't show you your current token. Regenerating replaces it; the old one stops working immediately.
+        </p>
+        {rtError && <p className="text-xs text-red-400 font-mono mb-3">{rtError}</p>}
+        <button
+          onClick={regenerateRecovery}
+          disabled={rtStatus === "working"}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-100 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors disabled:opacity-50"
+        >
+          {rtStatus === "working" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
+          Regenerate recovery token
+        </button>
+      </div>
+
+      {shownToken && (
+        <RecoveryTokenModal
+          token={shownToken}
+          context="regenerate"
+          onClose={() => setShownToken(null)}
+        />
+      )}
     </div>
   );
 }
