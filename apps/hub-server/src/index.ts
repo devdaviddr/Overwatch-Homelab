@@ -5,7 +5,6 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 import { authRouter } from "./routes/auth.js";
 import { homeLabRouter } from "./routes/homelabs.js";
-import { storagePoolRouter } from "./routes/storagePools.js";
 import { setupSocketServer } from "./socket/agentSocket.js";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
@@ -42,7 +41,6 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authLimiter, authRouter);
 app.use("/api/homelabs", apiLimiter, homeLabRouter);
-app.use("/api/homelabs", apiLimiter, storagePoolRouter);
 
 // ── Socket.io ───────────────────────────────────────────────────────────────
 setupSocketServer(httpServer, CORS_ORIGIN);

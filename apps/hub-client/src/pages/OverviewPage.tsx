@@ -1,56 +1,108 @@
-import { Server, HardDrive, Activity } from "lucide-react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Server, Database, Monitor, Plus } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.tsx";
 import { useHomeLabs } from "../hooks/useHomeLabs.ts";
+import { CreateHomeLabWizard } from "../components/CreateHomeLabWizard.tsx";
+import { RESOURCE_TYPE_CONFIG } from "../lib/resourceTypes.ts";
+import type { ResourceType } from "@overwatch/shared-types";
+
+function ResourceIcon({ type, className }: { type: ResourceType; className?: string }) {
+  const { iconName } = RESOURCE_TYPE_CONFIG[type];
+  if (iconName === "database") return <Database className={className} />;
+  if (iconName === "monitor") return <Monitor className={className} />;
+  return <Server className={className} />;
+}
 
 export function OverviewPage() {
   const { token } = useAuth();
   const { data: labs, isLoading } = useHomeLabs(token);
+  const navigate = useNavigate();
+  const [showWizard, setShowWizard] = useState(false);
+
+  function handleCreated(labId: string) {
+    setShowWizard(false);
+    navigate(`/labs/${labId}`);
+  }
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-white mb-6">Overview</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-white">Resources</h1>
+        <button
+          onClick={() => setShowWizard(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg transition-colors"
+        >
+          <Plus className="h-4 w-4" />
+          New Resource
+        </button>
+      </div>
 
       {isLoading && (
-        <div className="text-gray-400 text-sm">Loading homelabs…</div>
+        <div className="text-gray-400 text-sm">Loading resources…</div>
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {labs?.map((lab) => (
-          <div
-            key={lab.id}
-            className="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col gap-3"
-          >
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-brand-900/40 rounded-lg">
-                <Server className="h-5 w-5 text-brand-400" />
+        {labs?.map((lab) => {
+          const type = (lab.resourceType as ResourceType) ?? "HOMELAB";
+          const cfg = RESOURCE_TYPE_CONFIG[type];
+          return (
+            <button
+              key={lab.id}
+              onClick={() => navigate(`/labs/${lab.id}`)}
+              className="text-left bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col gap-3 hover:border-brand-700 hover:bg-gray-800/60 transition-colors cursor-pointer"
+            >
+              <div className="flex items-start gap-3">
+                <div className={`p-2 ${cfg.bgColor} rounded-lg shrink-0`}>
+                  <ResourceIcon type={type} className={`h-5 w-5 ${cfg.color}`} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="font-semibold text-white">{lab.name}</h2>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${cfg.bgColor} ${cfg.color} ${cfg.borderColor} font-mono`}>
+                      {cfg.label}
+                    </span>
+                  </div>
+                  {lab.description && (
+                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{lab.description}</p>
+                  )}
+                </div>
               </div>
-              <div>
-                <h2 className="font-semibold text-white">{lab.name}</h2>
-                {lab.description && (
-                  <p className="text-xs text-gray-500">{lab.description}</p>
-                )}
-              </div>
-            </div>
 
-            <div className="flex items-center gap-4 text-xs text-gray-500">
-              <span className="flex items-center gap-1">
-                <HardDrive className="h-3.5 w-3.5" />
-                {(lab as { storagePools?: unknown[] }).storagePools?.length ?? 0} storage pool(s)
-              </span>
-              <span className="flex items-center gap-1">
-                <Activity className="h-3.5 w-3.5" />
-                Configured
-              </span>
-            </div>
-          </div>
-        ))}
+              {Array.isArray(lab.labels) && lab.labels.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {lab.labels.map((l: string) => (
+                    <span key={l} className="text-[10px] px-2 py-0.5 bg-gray-800 text-gray-400 border border-gray-700 rounded">
+                      {l}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {!isLoading && labs?.length === 0 && (
-        <div className="mt-8 text-center text-gray-500">
-          <Server className="h-12 w-12 mx-auto mb-3 opacity-30" />
-          <p>No homelabs yet. Create one via the API to get started.</p>
+        <div className="mt-16 flex flex-col items-center text-center text-gray-500">
+          <Server className="h-14 w-14 mb-4 opacity-20" />
+          <p className="text-lg font-medium text-gray-400 mb-1">No resources yet</p>
+          <p className="text-sm mb-5">Add your first PC, server, or homelab to get started.</p>
+          <button
+            onClick={() => setShowWizard(true)}
+            className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Add your first resource
+          </button>
         </div>
+      )}
+
+      {showWizard && (
+        <CreateHomeLabWizard
+          onClose={() => setShowWizard(false)}
+          onCreated={handleCreated}
+        />
       )}
     </div>
   );

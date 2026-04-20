@@ -8,7 +8,7 @@ import { LabMetricsSchema } from "./metrics.js";
 export const AgentRegisterPayloadSchema = z.object({
   labId: z.string().uuid(),
   agentVersion: z.string(),
-  hostname: z.string(),
+  hostname: z.string().optional(),
 });
 
 export type AgentRegisterPayload = z.infer<typeof AgentRegisterPayloadSchema>;

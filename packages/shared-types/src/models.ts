@@ -30,13 +30,22 @@ export const LoginSchema = z.object({
 export type LoginInput = z.infer<typeof LoginSchema>;
 
 // ─────────────────────────────────────────────
-// HomeLab
+// Resource
+// ─────────────────────────────────────────────
+
+export const ResourceTypeSchema = z.enum(["HOMELAB", "SERVER", "PC"]);
+export type ResourceType = z.infer<typeof ResourceTypeSchema>;
+
+// ─────────────────────────────────────────────
+// HomeLab / Resource
 // ─────────────────────────────────────────────
 
 export const HomeLabSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
   description: z.string().nullable(),
+  resourceType: ResourceTypeSchema,
+  labels: z.array(z.string()),
   ownerId: z.string().uuid(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -47,31 +56,8 @@ export type HomeLab = z.infer<typeof HomeLabSchema>;
 export const CreateHomeLabSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
+  resourceType: ResourceTypeSchema.default("HOMELAB"),
+  labels: z.array(z.string()).default([]),
 });
 
 export type CreateHomeLabInput = z.infer<typeof CreateHomeLabSchema>;
-
-// ─────────────────────────────────────────────
-// StoragePool
-// ─────────────────────────────────────────────
-
-export const StoragePoolSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string(),
-  totalBytes: z.number().int().nonnegative(),
-  usedBytes: z.number().int().nonnegative(),
-  homeLabId: z.string().uuid(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-});
-
-export type StoragePool = z.infer<typeof StoragePoolSchema>;
-
-export const CreateStoragePoolSchema = z.object({
-  name: z.string().min(1),
-  totalBytes: z.number().int().nonnegative(),
-  usedBytes: z.number().int().nonnegative().default(0),
-  homeLabId: z.string().uuid(),
-});
-
-export type CreateStoragePoolInput = z.infer<typeof CreateStoragePoolSchema>;

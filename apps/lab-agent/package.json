@@ -13,7 +13,8 @@
   "dependencies": {
     "@overwatch/shared-types": "*",
     "dotenv": "^16.4.5",
-    "socket.io-client": "^4.7.5"
+    "socket.io-client": "^4.7.5",
+    "systeminformation": "^5.31.5"
   },
   "devDependencies": {
     "@types/node": "^20.14.2",

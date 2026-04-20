@@ -2,6 +2,17 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { authenticate } from "../middleware/auth.js";
 import { CreateHomeLabSchema } from "@overwatch/shared-types";
+import { z } from "zod";
+
+const UpdateHomeLabSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional().nullable(),
+  resourceType: z.enum(["HOMELAB", "SERVER", "PC"]).optional(),
+  labels: z.array(z.string()).optional(),
+  agentHubUrl: z.string().url().optional().nullable(),
+  heartbeatIntervalMs: z.number().int().min(1000).optional(),
+  metricsIntervalMs: z.number().int().min(5000).optional(),
+});
 
 export const homeLabRouter = Router();
 
@@ -11,7 +22,6 @@ homeLabRouter.use(authenticate);
 homeLabRouter.get("/", async (req: Request, res: Response): Promise<void> => {
   const labs = await prisma.homeLab.findMany({
     where: { ownerId: req.user!.userId },
-    include: { storagePools: true },
     orderBy: { createdAt: "asc" },
   });
   res.json({ success: true, data: labs });
@@ -21,7 +31,6 @@ homeLabRouter.get("/", async (req: Request, res: Response): Promise<void> => {
 homeLabRouter.get("/:id", async (req: Request, res: Response): Promise<void> => {
   const lab = await prisma.homeLab.findFirst({
     where: { id: req.params.id, ownerId: req.user!.userId },
-    include: { storagePools: true },
   });
 
   if (!lab) {
@@ -48,10 +57,40 @@ homeLabRouter.post("/", async (req: Request, res: Response): Promise<void> => {
 
   const lab = await prisma.homeLab.create({
     data: { ...parsed.data, ownerId: req.user!.userId },
-    include: { storagePools: true },
   });
 
   res.status(201).json({ success: true, data: lab });
+});
+
+// PATCH /homelabs/:id
+homeLabRouter.patch("/:id", async (req: Request, res: Response): Promise<void> => {
+  const lab = await prisma.homeLab.findFirst({
+    where: { id: req.params.id, ownerId: req.user!.userId },
+  });
+
+  if (!lab) {
+    res.status(404).json({
+      success: false,
+      error: { code: "NOT_FOUND", message: "HomeLab not found" },
+    });
+    return;
+  }
+
+  const parsed = UpdateHomeLabSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      success: false,
+      error: { code: "VALIDATION_ERROR", message: "Invalid input", details: parsed.error.flatten() },
+    });
+    return;
+  }
+
+  const updated = await prisma.homeLab.update({
+    where: { id: req.params.id },
+    data: parsed.data,
+  });
+
+  res.json({ success: true, data: updated });
 });
 
 // DELETE /homelabs/:id
