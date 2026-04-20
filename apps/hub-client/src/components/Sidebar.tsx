@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import {
   Shield,
@@ -9,7 +9,18 @@ import {
   LogOut,
   ChevronRight,
   Loader2,
+  HelpCircle,
+  PlayCircle,
+  Cpu,
+  Network,
 } from "lucide-react";
+
+const HELP_TOPICS = [
+  { id: "getting-started", title: "Getting Started", icon: PlayCircle },
+  { id: "agent-setup", title: "Agent Setup", icon: Cpu },
+  { id: "architecture", title: "Architecture", icon: Network },
+  { id: "faq", title: "FAQ", icon: HelpCircle },
+];
 import { useAuth } from "../hooks/useAuth.tsx";
 import { useHomeLabs } from "../hooks/useHomeLabs.ts";
 import { RESOURCE_TYPE_CONFIG } from "../lib/resourceTypes.ts";
@@ -57,6 +68,17 @@ export function Sidebar() {
       // ignore
     }
   }, [collapsed]);
+
+  const location = useLocation();
+  const [helpExpanded, setHelpExpanded] = useState(() =>
+    location.pathname.startsWith("/help")
+  );
+
+  useEffect(() => {
+    if (location.pathname.startsWith("/help")) {
+      setHelpExpanded(true);
+    }
+  }, [location.pathname]);
 
   return (
     <aside
@@ -153,6 +175,64 @@ export function Sidebar() {
 
           {!isLoading && labs?.length === 0 && (
             <p className={`px-3 py-2 text-xs text-gray-600 italic ${collapsed ? "sr-only" : ""}`}>No resources configured</p>
+          )}
+        </div>
+
+        {/* Help expandable */}
+        <div className="mt-4 pt-4 border-t border-gray-800">
+          {!collapsed ? (
+            <>
+              <button
+                onClick={() => setHelpExpanded((s) => !s)}
+                className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  location.pathname.startsWith("/help")
+                    ? "text-brand-400"
+                    : "text-gray-400 hover:text-white hover:bg-gray-800"
+                }`}
+              >
+                <span className="flex items-center gap-3">
+                  <HelpCircle className="h-4 w-4 shrink-0" />
+                  <span>Help</span>
+                </span>
+                <ChevronRight
+                  className={`h-3 w-3 transform transition-transform ${helpExpanded ? "rotate-90" : ""}`}
+                />
+              </button>
+              {helpExpanded && (
+                <div className="mt-1 ml-3 pl-3 border-l border-gray-800 flex flex-col gap-0.5">
+                  {HELP_TOPICS.map(({ id, title, icon: Icon }) => (
+                    <NavLink
+                      key={id}
+                      to={`/help/${id}`}
+                      className={({ isActive }) =>
+                        `flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                          isActive
+                            ? "text-brand-400 bg-brand-900/40"
+                            : "text-gray-400 hover:text-white hover:bg-gray-800"
+                        }`
+                      }
+                    >
+                      <Icon className="h-3.5 w-3.5 shrink-0" />
+                      {title}
+                    </NavLink>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <NavLink
+              to="/help/getting-started"
+              className={({ isActive }) =>
+                `group relative flex justify-center px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isActive ? "bg-brand-900/50 text-brand-400" : "text-gray-400 hover:text-white hover:bg-gray-800"
+                }`
+              }
+            >
+              <HelpCircle className="h-4 w-4" />
+              <div role="tooltip" className="absolute left-full ml-3 top-1/2 -translate-y-1/2 hidden group-hover:block group-focus:block z-50">
+                <div className="bg-gray-800 text-white text-sm px-3 py-1 rounded-md shadow">Help</div>
+              </div>
+            </NavLink>
           )}
         </div>
       </nav>
