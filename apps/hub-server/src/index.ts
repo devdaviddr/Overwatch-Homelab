@@ -8,7 +8,8 @@ import { authRouter } from "./routes/auth.js";
 import { homeLabRouter } from "./routes/homelabs.js";
 import { agentsRouter } from "./routes/agents.js";
 import { agentLauncherRouter } from "./routes/agentLauncher.js";
-import { setupSocketServer } from "./socket/agentSocket.js";
+import { setupSocketServer, onAgentMetrics } from "./socket/agentSocket.js";
+import { persistMetricSnapshot, evaluateAlerts, startRetentionPruner } from "./lib/metrics.js";
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -45,7 +46,27 @@ app.use("/api/agents", apiLimiter, agentsRouter);
 app.use("/api/agent", apiLimiter, agentLauncherRouter);
 
 // ── Socket.io ───────────────────────────────────────────────────────────────
-setupSocketServer(httpServer, env.CORS_ORIGIN);
+const io = setupSocketServer(httpServer, env.CORS_ORIGIN);
+
+// ── Metrics persistence + alert evaluation ──────────────────────────────────
+// Runs out-of-band from the live broadcast path — errors are logged but
+// never bubble back to the agent.
+onAgentMetrics(async (payload) => {
+  try {
+    await persistMetricSnapshot(payload);
+  } catch (err) {
+    console.error("[Metrics] snapshot persist failed:", err);
+    return;
+  }
+  try {
+    await evaluateAlerts(payload, io);
+  } catch (err) {
+    console.error("[Metrics] alert eval failed:", err);
+  }
+});
+
+// ── Retention pruner (every 6 h) ────────────────────────────────────────────
+startRetentionPruner();
 
 // ── Start ───────────────────────────────────────────────────────────────────
 httpServer.listen(env.PORT, () => {

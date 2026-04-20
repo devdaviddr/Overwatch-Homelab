@@ -39,10 +39,53 @@ model HomeLab {
   agentHubUrl         String?
   heartbeatIntervalMs Int          @default(15000)
   metricsIntervalMs   Int          @default(60000)
+  retentionDays       Int          @default(30)
+  alertThresholds     Json?
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
-  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  owner     User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  snapshots MetricSnapshot[]
+  alerts    Alert[]
 
+  @@index([ownerId, createdAt])
   @@map("homelabs")
+}
+
+model MetricSnapshot {
+  id              String   @id @default(uuid())
+  labId           String
+  recordedAt      DateTime @default(now())
+  cpuPercent      Float
+  memTotalBytes   BigInt
+  memActiveBytes  BigInt
+  diskSnapshots   Json
+  rawPayload      Json
+
+  lab HomeLab @relation(fields: [labId], references: [id], onDelete: Cascade)
+
+  @@index([labId, recordedAt(sort: Desc)])
+  @@map("metric_snapshots")
+}
+
+enum AlertMetric {
+  cpu
+  memory
+  disk
+}
+
+model Alert {
+  id             String      @id @default(uuid())
+  labId          String
+  metric         AlertMetric
+  threshold      Float
+  peakValue      Float
+  firedAt        DateTime    @default(now())
+  resolvedAt     DateTime?
+  acknowledgedAt DateTime?
+
+  lab HomeLab @relation(fields: [labId], references: [id], onDelete: Cascade)
+
+  @@index([labId, firedAt(sort: Desc)])
+  @@map("alerts")
 }

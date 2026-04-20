@@ -1,7 +1,14 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { authenticate } from "../middleware/auth.js";
-import { CreateHomeLabSchema } from "@overwatch/shared-types";
+import {
+  CreateHomeLabSchema,
+  AlertThresholdsSchema,
+  MetricsRangeQuerySchema,
+  PaginationQuerySchema,
+  type MetricPoint,
+  type MetricsRangeResponse,
+} from "@overwatch/shared-types";
 import { reassignAgent } from "../socket/agentSocket.js";
 import { z } from "zod";
 
@@ -13,19 +20,163 @@ const UpdateHomeLabSchema = z.object({
   agentHubUrl: z.string().url().optional().nullable(),
   heartbeatIntervalMs: z.number().int().min(1000).optional(),
   metricsIntervalMs: z.number().int().min(5000).optional(),
+  retentionDays: z.number().int().min(1).max(365).optional(),
+  alertThresholds: AlertThresholdsSchema.nullable().optional(),
 });
+
+// Cursor encodes (createdAt, id) so results are stable across inserts.
+function encodeCursor(row: { createdAt: Date; id: string }): string {
+  return Buffer.from(`${row.createdAt.toISOString()}|${row.id}`).toString("base64url");
+}
+
+function decodeCursor(cursor: string): { createdAt: Date; id: string } | null {
+  try {
+    const raw = Buffer.from(cursor, "base64url").toString("utf8");
+    const [ts, id] = raw.split("|");
+    if (!ts || !id) return null;
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return null;
+    return { createdAt: d, id };
+  } catch {
+    return null;
+  }
+}
+
+// Downsampling — bucket snapshots by resolution and average.
+const RESOLUTION_MS: Record<"raw" | "1m" | "5m" | "1h", number> = {
+  raw: 0,
+  "1m": 60_000,
+  "5m": 5 * 60_000,
+  "1h": 60 * 60_000,
+};
+
+interface RawSnapshot {
+  recordedAt: Date;
+  cpuPercent: number;
+  memTotalBytes: bigint;
+  memActiveBytes: bigint;
+  diskSnapshots: unknown;
+}
+
+function bucketize(rows: RawSnapshot[], bucketMs: number): MetricPoint[] {
+  if (bucketMs === 0) {
+    return rows.map((r) => ({
+      timestamp: r.recordedAt.toISOString(),
+      cpuPercent: r.cpuPercent,
+      memActivePercent: memPct(r),
+      diskUsedPercent: diskPctMap(r),
+    }));
+  }
+
+  type Acc = {
+    bucketStart: number;
+    cpuSum: number;
+    memSum: number;
+    diskSums: Record<string, number>;
+    diskCounts: Record<string, number>;
+    count: number;
+  };
+  const buckets = new Map<number, Acc>();
+
+  for (const r of rows) {
+    const t = r.recordedAt.getTime();
+    const key = Math.floor(t / bucketMs) * bucketMs;
+    let acc = buckets.get(key);
+    if (!acc) {
+      acc = { bucketStart: key, cpuSum: 0, memSum: 0, diskSums: {}, diskCounts: {}, count: 0 };
+      buckets.set(key, acc);
+    }
+    acc.cpuSum += r.cpuPercent;
+    acc.memSum += memPct(r);
+    const disks = diskPctMap(r);
+    for (const [mount, pct] of Object.entries(disks)) {
+      acc.diskSums[mount] = (acc.diskSums[mount] ?? 0) + pct;
+      acc.diskCounts[mount] = (acc.diskCounts[mount] ?? 0) + 1;
+    }
+    acc.count += 1;
+  }
+
+  return Array.from(buckets.values())
+    .sort((a, b) => a.bucketStart - b.bucketStart)
+    .map((acc) => {
+      const diskUsedPercent: Record<string, number> = {};
+      for (const mount of Object.keys(acc.diskSums)) {
+        diskUsedPercent[mount] = acc.diskSums[mount] / acc.diskCounts[mount];
+      }
+      return {
+        timestamp: new Date(acc.bucketStart).toISOString(),
+        cpuPercent: acc.cpuSum / acc.count,
+        memActivePercent: acc.memSum / acc.count,
+        diskUsedPercent,
+      };
+    });
+}
+
+function memPct(r: { memTotalBytes: bigint; memActiveBytes: bigint }): number {
+  const total = Number(r.memTotalBytes);
+  if (!total) return 0;
+  return (Number(r.memActiveBytes) / total) * 100;
+}
+
+function diskPctMap(r: { diskSnapshots: unknown }): Record<string, number> {
+  const arr = (r.diskSnapshots ?? []) as Array<{ mountPoint: string; usedBytes: number; totalBytes: number }>;
+  const out: Record<string, number> = {};
+  for (const d of arr) {
+    if (!d.totalBytes) continue;
+    out[d.mountPoint] = (d.usedBytes / d.totalBytes) * 100;
+  }
+  return out;
+}
 
 export const homeLabRouter = Router();
 
 homeLabRouter.use(authenticate);
 
-// GET /homelabs – list the current user's homelabs
+// GET /homelabs — cursor-paginated list of the current user's homelabs.
+// Stable ordering via (createdAt ASC, id ASC) so the cursor stays valid
+// across inserts.
 homeLabRouter.get("/", async (req: Request, res: Response): Promise<void> => {
-  const labs = await prisma.homeLab.findMany({
-    where: { ownerId: req.user!.userId },
-    orderBy: { createdAt: "asc" },
+  const parsed = PaginationQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({
+      success: false,
+      error: { code: "VALIDATION_ERROR", message: "Invalid pagination params", details: parsed.error.flatten() },
+    });
+    return;
+  }
+
+  const { limit, cursor } = parsed.data;
+
+  let cursorClause = {};
+  if (cursor) {
+    const decoded = decodeCursor(cursor);
+    if (!decoded) {
+      res.status(400).json({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: "Invalid cursor" },
+      });
+      return;
+    }
+    cursorClause = {
+      OR: [
+        { createdAt: { gt: decoded.createdAt } },
+        { createdAt: decoded.createdAt, id: { gt: decoded.id } },
+      ],
+    };
+  }
+
+  // Fetch one extra to detect hasMore without a separate count query.
+  const rows = await prisma.homeLab.findMany({
+    where: { ownerId: req.user!.userId, ...cursorClause },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    take: limit + 1,
   });
-  res.json({ success: true, data: labs });
+
+  const hasMore = rows.length > limit;
+  const items = hasMore ? rows.slice(0, limit) : rows;
+  const nextCursor = hasMore ? encodeCursor(items[items.length - 1]) : null;
+
+  res.json({ success: true, data: { items, nextCursor, hasMore } });
 });
 
 // GET /homelabs/:id
@@ -86,9 +237,16 @@ homeLabRouter.patch("/:id", async (req: Request, res: Response): Promise<void> =
     return;
   }
 
+  // alertThresholds needs explicit serialisation so Prisma writes it as JSON.
+  const { alertThresholds, ...rest } = parsed.data;
+  const updateData: Record<string, unknown> = { ...rest };
+  if (alertThresholds !== undefined) {
+    updateData.alertThresholds = alertThresholds === null ? null : (alertThresholds as object);
+  }
+
   const updated = await prisma.homeLab.update({
     where: { id: req.params.id },
-    data: parsed.data,
+    data: updateData,
   });
 
   res.json({ success: true, data: updated });
@@ -135,5 +293,157 @@ homeLabRouter.delete("/:id", async (req: Request, res: Response): Promise<void> 
   }
 
   await prisma.homeLab.delete({ where: { id: req.params.id } });
+  res.status(204).send();
+});
+
+// GET /homelabs/:id/metrics — historical metrics over a time window.
+// Server-side downsampling via time-bucket averaging.
+homeLabRouter.get("/:id/metrics", async (req: Request, res: Response): Promise<void> => {
+  const lab = await prisma.homeLab.findFirst({
+    where: { id: req.params.id, ownerId: req.user!.userId },
+    select: { id: true },
+  });
+  if (!lab) {
+    res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "HomeLab not found" } });
+    return;
+  }
+
+  const parsed = MetricsRangeQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({
+      success: false,
+      error: { code: "VALIDATION_ERROR", message: "Invalid query", details: parsed.error.flatten() },
+    });
+    return;
+  }
+
+  const now = new Date();
+  const to = parsed.data.to ? new Date(parsed.data.to) : now;
+  const from = parsed.data.from ? new Date(parsed.data.from) : new Date(to.getTime() - 60 * 60 * 1000);
+  const resolution = parsed.data.resolution;
+
+  if (from >= to) {
+    res.status(400).json({
+      success: false,
+      error: { code: "VALIDATION_ERROR", message: "`from` must be earlier than `to`" },
+    });
+    return;
+  }
+
+  const rows = await prisma.metricSnapshot.findMany({
+    where: { labId: lab.id, recordedAt: { gte: from, lte: to } },
+    orderBy: { recordedAt: "asc" },
+    select: {
+      recordedAt: true,
+      cpuPercent: true,
+      memTotalBytes: true,
+      memActiveBytes: true,
+      diskSnapshots: true,
+    },
+  });
+
+  const points = bucketize(rows, RESOLUTION_MS[resolution]);
+
+  const body: MetricsRangeResponse = {
+    labId: lab.id,
+    from: from.toISOString(),
+    to: to.toISOString(),
+    resolution,
+    points,
+  };
+
+  res.json({ success: true, data: body });
+});
+
+// GET /homelabs/:id/alerts — list alerts (status filter + pagination).
+const AlertsQuerySchema = z.object({
+  status: z.enum(["active", "resolved", "all"]).optional().default("all"),
+  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
+  cursor: z.string().optional(),
+});
+
+homeLabRouter.get("/:id/alerts", async (req: Request, res: Response): Promise<void> => {
+  const lab = await prisma.homeLab.findFirst({
+    where: { id: req.params.id, ownerId: req.user!.userId },
+    select: { id: true },
+  });
+  if (!lab) {
+    res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "HomeLab not found" } });
+    return;
+  }
+
+  const parsed = AlertsQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({
+      success: false,
+      error: { code: "VALIDATION_ERROR", message: "Invalid query", details: parsed.error.flatten() },
+    });
+    return;
+  }
+
+  const { status, limit, cursor } = parsed.data;
+
+  const statusFilter =
+    status === "active"
+      ? { resolvedAt: null }
+      : status === "resolved"
+      ? { resolvedAt: { not: null } }
+      : {};
+
+  let cursorClause = {};
+  if (cursor) {
+    const decoded = decodeCursor(cursor);
+    if (decoded) {
+      // firedAt desc, so next page has firedAt < cursor.createdAt (treating cursor as firedAt+id).
+      cursorClause = {
+        OR: [
+          { firedAt: { lt: decoded.createdAt } },
+          { firedAt: decoded.createdAt, id: { lt: decoded.id } },
+        ],
+      };
+    }
+  }
+
+  const rows = await prisma.alert.findMany({
+    where: { labId: lab.id, ...statusFilter, ...cursorClause },
+    orderBy: [{ firedAt: "desc" }, { id: "desc" }],
+    take: limit + 1,
+  });
+
+  const hasMore = rows.length > limit;
+  const items = hasMore ? rows.slice(0, limit) : rows;
+  const nextCursor = hasMore
+    ? encodeCursor({ createdAt: items[items.length - 1].firedAt, id: items[items.length - 1].id })
+    : null;
+
+  res.json({ success: true, data: { items, nextCursor, hasMore } });
+});
+
+// POST /homelabs/:id/alerts/:alertId/acknowledge — 204 on success.
+homeLabRouter.post("/:id/alerts/:alertId/acknowledge", async (req: Request, res: Response): Promise<void> => {
+  const lab = await prisma.homeLab.findFirst({
+    where: { id: req.params.id, ownerId: req.user!.userId },
+    select: { id: true },
+  });
+  if (!lab) {
+    res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "HomeLab not found" } });
+    return;
+  }
+
+  const alert = await prisma.alert.findFirst({
+    where: { id: req.params.alertId, labId: lab.id },
+  });
+  if (!alert) {
+    res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Alert not found" } });
+    return;
+  }
+
+  if (alert.acknowledgedAt === null) {
+    await prisma.alert.update({
+      where: { id: alert.id },
+      data: { acknowledgedAt: new Date() },
+    });
+  }
+
   res.status(204).send();
 });
