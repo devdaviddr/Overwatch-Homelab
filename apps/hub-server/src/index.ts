@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { env } from "./lib/env.js";
 import http from "http";
 import express from "express";
 import cors from "cors";
@@ -8,9 +9,6 @@ import { homeLabRouter } from "./routes/homelabs.js";
 import { agentsRouter } from "./routes/agents.js";
 import { agentLauncherRouter } from "./routes/agentLauncher.js";
 import { setupSocketServer } from "./socket/agentSocket.js";
-
-const PORT = parseInt(process.env.PORT ?? "3001", 10);
-const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:5173";
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -33,7 +31,7 @@ const apiLimiter = rateLimit({
 });
 
 // ── Middleware ──────────────────────────────────────────────────────────────
-app.use(cors({ origin: CORS_ORIGIN, credentials: true }));
+app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
 app.use(express.json());
 
 // ── Routes ──────────────────────────────────────────────────────────────────
@@ -47,9 +45,9 @@ app.use("/api/agents", apiLimiter, agentsRouter);
 app.use("/api/agent", apiLimiter, agentLauncherRouter);
 
 // ── Socket.io ───────────────────────────────────────────────────────────────
-setupSocketServer(httpServer, CORS_ORIGIN);
+setupSocketServer(httpServer, env.CORS_ORIGIN);
 
 // ── Start ───────────────────────────────────────────────────────────────────
-httpServer.listen(PORT, () => {
-  console.log(`[Hub Server] Listening on http://localhost:${PORT}`);
+httpServer.listen(env.PORT, () => {
+  console.log(`[Hub Server] Listening on http://localhost:${env.PORT}`);
 });

@@ -31,7 +31,9 @@ services:
       PORT: "3001"
       CORS_ORIGIN: "http://localhost:5174"
       NODE_ENV: production
-      JWT_SECRET: "dev_jwt_secret"
+      # JWT_SECRET must be supplied via .env file or shell env — no default.
+      # Generate a strong secret with: openssl rand -hex 32
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET env var is required (see .env.example)}
     ports:
       - "3002:3001"
     depends_on:
