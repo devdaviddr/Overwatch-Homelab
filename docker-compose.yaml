@@ -33,7 +33,11 @@ services:
       NODE_ENV: production
       # JWT_SECRET must be supplied via .env file or shell env — no default.
       # Generate a strong secret with: openssl rand -hex 32
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET env var is required (see .env.example)}
+      # The hub-server refuses to start (exit 1) if this is unset or shorter
+      # than 16 chars — see src/lib/env.ts. We don't use ${JWT_SECRET:?…}
+      # compose-level validation because that would also block `down`,
+      # `logs`, `ps`, etc.
+      JWT_SECRET: ${JWT_SECRET:-}
     ports:
       - "3002:3001"
     depends_on:
