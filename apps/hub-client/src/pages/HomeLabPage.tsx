@@ -66,7 +66,7 @@ export function HomeLabPage() {
       {/* ── Header ── */}
       <div className="flex items-start justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className={`p-2 ${cfg.bgColor} border ${cfg.borderColor} rounded-lg`}>
+          <div className={`w-10 h-10 rounded-md flex items-center justify-center shrink-0 ${cfg.bgColor} border-2 ${cfg.borderColor}`}>
             <ResourceIcon type={type} className={`h-5 w-5 ${cfg.color}`} />
           </div>
           <div>
@@ -89,18 +89,16 @@ export function HomeLabPage() {
                 {connected ? "AGENT ONLINE" : "AGENT OFFLINE"}
               </span>
             </div>
-            {labData.description && (
-              <p className="text-sm text-gray-500 mt-0.5">{labData.description}</p>
-            )}
-            {Array.isArray(labData.labels) && labData.labels.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-1.5">
-                {labData.labels.map((l: string) => (
-                  <span key={l} className="text-[10px] px-2 py-0.5 bg-gray-800 text-gray-400 border border-gray-700 rounded">
-                    {l}
-                  </span>
-                ))}
-              </div>
-            )}
+            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+              {labData.description && (
+                <p className="text-sm text-gray-500">{labData.description}</p>
+              )}
+              {Array.isArray(labData.labels) && labData.labels.map((l: string) => (
+                <span key={l} className="text-[10px] px-2 py-0.5 bg-gray-800 text-gray-400 border border-gray-700 rounded">
+                  {l}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
 

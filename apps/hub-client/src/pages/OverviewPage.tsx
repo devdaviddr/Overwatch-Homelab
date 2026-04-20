@@ -53,7 +53,7 @@ export function OverviewPage() {
               className="text-left bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col gap-3 hover:border-brand-700 hover:bg-gray-800/60 transition-colors cursor-pointer"
             >
               <div className="flex items-start gap-3">
-                <div className={`p-2 ${cfg.bgColor} rounded-lg shrink-0`}>
+                <div className={`w-10 h-10 rounded-md flex items-center justify-center shrink-0 ${cfg.bgColor} border-2 border-transparent`}>
                   <ResourceIcon type={type} className={`h-5 w-5 ${cfg.color}`} />
                 </div>
                 <div className="min-w-0">
@@ -63,21 +63,18 @@ export function OverviewPage() {
                       {cfg.label}
                     </span>
                   </div>
-                  {lab.description && (
-                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{lab.description}</p>
-                  )}
+                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                    {lab.description && (
+                      <p className="text-xs text-gray-500 line-clamp-2">{lab.description}</p>
+                    )}
+                    {Array.isArray(lab.labels) && lab.labels.map((l: string) => (
+                      <span key={l} className="text-[10px] px-2 py-0.5 bg-gray-800 text-gray-400 border border-gray-700 rounded">
+                        {l}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
-
-              {Array.isArray(lab.labels) && lab.labels.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {lab.labels.map((l: string) => (
-                    <span key={l} className="text-[10px] px-2 py-0.5 bg-gray-800 text-gray-400 border border-gray-700 rounded">
-                      {l}
-                    </span>
-                  ))}
-                </div>
-              )}
             </button>
           );
         })}

@@ -47,6 +47,9 @@ export const HomeLabSchema = z.object({
   resourceType: ResourceTypeSchema,
   labels: z.array(z.string()),
   ownerId: z.string().uuid(),
+  agentHubUrl: z.string().url().nullable().optional(),
+  heartbeatIntervalMs: z.number().int().optional(),
+  metricsIntervalMs: z.number().int().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -58,6 +61,9 @@ export const CreateHomeLabSchema = z.object({
   description: z.string().optional(),
   resourceType: ResourceTypeSchema.default("HOMELAB"),
   labels: z.array(z.string()).default([]),
+  agentHubUrl: z.string().url().optional().nullable(),
+  heartbeatIntervalMs: z.number().int().min(1000).optional(),
+  metricsIntervalMs: z.number().int().min(5000).optional(),
 });
 
 export type CreateHomeLabInput = z.infer<typeof CreateHomeLabSchema>;

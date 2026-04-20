@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { authenticate } from "../middleware/auth.js";
 import { CreateHomeLabSchema } from "@overwatch/shared-types";
+import { reassignAgent } from "../socket/agentSocket.js";
 import { z } from "zod";
 
 const UpdateHomeLabSchema = z.object({
@@ -91,6 +92,32 @@ homeLabRouter.patch("/:id", async (req: Request, res: Response): Promise<void> =
   });
 
   res.json({ success: true, data: updated });
+});
+
+// POST /homelabs/:id/assign-agent
+homeLabRouter.post("/:id/assign-agent", async (req: Request, res: Response): Promise<void> => {
+  const lab = await prisma.homeLab.findFirst({
+    where: { id: req.params.id, ownerId: req.user!.userId },
+  });
+
+  if (!lab) {
+    res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "HomeLab not found" } });
+    return;
+  }
+
+  const { socketId } = req.body;
+  if (!socketId || typeof socketId !== "string") {
+    res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "socketId is required" } });
+    return;
+  }
+
+  const ok = reassignAgent(socketId, lab.id);
+  if (!ok) {
+    res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Agent not found or not connected" } });
+    return;
+  }
+
+  res.json({ success: true });
 });
 
 // DELETE /homelabs/:id

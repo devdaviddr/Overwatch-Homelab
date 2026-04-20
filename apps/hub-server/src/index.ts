@@ -5,6 +5,8 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 import { authRouter } from "./routes/auth.js";
 import { homeLabRouter } from "./routes/homelabs.js";
+import { agentsRouter } from "./routes/agents.js";
+import { agentLauncherRouter } from "./routes/agentLauncher.js";
 import { setupSocketServer } from "./socket/agentSocket.js";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
@@ -41,6 +43,8 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authLimiter, authRouter);
 app.use("/api/homelabs", apiLimiter, homeLabRouter);
+app.use("/api/agents", apiLimiter, agentsRouter);
+app.use("/api/agent", apiLimiter, agentLauncherRouter);
 
 // ── Socket.io ───────────────────────────────────────────────────────────────
 setupSocketServer(httpServer, CORS_ORIGIN);

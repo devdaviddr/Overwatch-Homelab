@@ -45,9 +45,15 @@ export const AgentEvents = {
   DISCONNECT: "agent:disconnect",
 } as const;
 
+export const HubReassignPayloadSchema = z.object({
+  newLabId: z.string().uuid(),
+});
+export type HubReassignPayload = z.infer<typeof HubReassignPayloadSchema>;
+
 export const HubEvents = {
   ACK: "hub:ack",
   ERROR: "hub:error",
+  REASSIGN: "hub:reassign",
 } as const;
 
 export type AgentEventName = (typeof AgentEvents)[keyof typeof AgentEvents];
