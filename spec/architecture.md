@@ -436,5 +436,5 @@ cd apps/hub-server && npx prisma db push && npm run dev
 - All REST API resources owner-scoped; no cross-user data leakage (verified by manual QA).
 - Socket.IO dashboard sockets authenticated with JWT on handshake; `dashboard:subscribe` checks `HomeLab.ownerId === socket.userId`. Unknown/foreign labs are rejected with `hub:error FORBIDDEN`.
 - `agent:register` now also validates that the labId exists; unknown labs are rejected with `hub:error UNKNOWN_LAB` and the socket is disconnected (prevents log spam from stale-config agents and avoids FK-violation traffic).
-- Agent-to-hub socket remains `labId`-only authenticated. Agent-side JWT is a v0.3.0 concern — see the Help Center "Profile & Security" entry for the trade-off.
+- Agent-to-hub socket remains `labId`-only authenticated. Agent token auth ships in v0.3.0 as an opt-in per-lab mode (legacy `labId`-only remains the default) — see the Help Center "Profile & Security" entry for the trade-off.
 - `docker-compose.yaml` contains hardcoded dev credentials for Postgres — **do not use in production**. `JWT_SECRET` and `LAB_ID` use soft defaults (`${VAR:-}`) so lifecycle commands (`down`/`logs`/`ps`) never block on missing env; the hub-server's own env validator is the authoritative check at startup.

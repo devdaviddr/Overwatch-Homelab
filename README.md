@@ -4,6 +4,7 @@ A multi-tenant resource monitoring platform that collects real system metrics fr
 
 **Current release:** v0.2.0 — historical metrics, time-range charts, threshold alerting, profile management, platform hardening · [Spec](spec/0.2.0/0.2.0.md) · [Architecture](spec/architecture.md)
 **Previous:** [v0.1.0](spec/0.1.0/0.1.0.md) · [v0.1.1](spec/0.1.1/0.1.1.md) · [v0.1.2](spec/0.1.2/0.1.2.md)
+**Draft specs:** [v0.3.0](spec/0.3.0/0.3.0.md) · [v0.4.0](spec/0.4.0/0.4.0.md) · [v0.5.0](spec/0.5.0/0.5.0.md) · [v0.6.0](spec/0.6.0/0.6.0.md)
 
 ## Monorepo Structure
 
@@ -251,7 +252,11 @@ Metrics are persisted and pruned per-lab every 6 h using the configured `retenti
 | v0.1.1 | macOS seamless agent launch + collapsible sidebar | ✅ Released |
 | v0.1.2 | In-app Help Center with markdown rendering | ✅ Released |
 | v0.2.0 | Historical metrics, time-range charts, threshold alerting, profile management, hardening | ✅ Released |
-| v0.3.0+ | Email/webhook alert delivery, multi-user roles, resource sharing, TLS hardening, mobile layout | 🔮 Future |
+| v0.3.0 | Operate what you run: Docker container monitoring, uptime checks (HTTP/TCP/ICMP), multi-channel alert delivery (webhook/Discord/ntfy/SMTP) | 📐 Draft |
+| v0.4.0 | Know your hardware before it dies: disk SMART + ZFS/mdadm health, GPU telemetry, UPS/power (NUT), expanded board sensors | 📐 Draft |
+| v0.5.0 | See the network, not just the hosts: SNMP device monitoring, synthetic network health (speedtest/gateway/DNS), per-interface throughput | 📐 Draft |
+| v0.6.0 | Platform maturity: multi-user RBAC + resource sharing, signed agent packaging + auto-update, TLS/mTLS, TimescaleDB + rollups, public status pages, PWA | 📐 Draft |
+| v0.7.0+ | Future: Kubernetes/Podman, Netflow/sFlow, log aggregation, backup job ingestion, 2FA/SSO, user-editable alert templates | 🔮 Planned |
 
 ---
 
